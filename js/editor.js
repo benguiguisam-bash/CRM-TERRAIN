@@ -19,6 +19,95 @@ const HINTS = {
   ouverture: n => `Touche les 4 coins de la fenêtre ou de la porte (${n}/4).`,
 };
 
+// Réglette façon molette : on la fait glisser pour ajuster la valeur au centimètre,
+// avec de l'élan quand on la lance. La saisie au clavier la repositionne.
+function setupRuler(el, input, initial) {
+  const cv = el.querySelector('canvas');
+  const ctx = cv.getContext('2d');
+  const PX = 12; // pixels par centimètre
+  let val = parseNum(input.value) ?? initial ?? 0;
+  let raf = 0, drag = null, alive = true;
+
+  function draw() {
+    const w = el.clientWidth, h = el.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!w) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const center = val * 100, span = Math.ceil(w / 2 / PX) + 2;
+    for (let i = -span; i <= span; i++) {
+      const cm = Math.round(center) + i;
+      if (cm < 0) continue;
+      const x = w / 2 + (cm - center) * PX;
+      const major = cm % 10 === 0, mid = cm % 5 === 0;
+      const len = major ? h * 0.5 : mid ? h * 0.34 : h * 0.22;
+      ctx.strokeStyle = major ? 'rgba(165,243,252,0.95)' : 'rgba(34,211,238,0.5)';
+      ctx.lineWidth = major ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(x, h); ctx.lineTo(x, h - len); ctx.stroke();
+      if (major) {
+        ctx.fillStyle = '#A5F3FC';
+        ctx.font = '700 11px "JetBrains Mono", ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText((cm / 100).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }), x, 12);
+      }
+    }
+    el.setAttribute('aria-valuenow', val.toFixed(2));
+  }
+
+  function setVal(v, fromInput = false) {
+    const before = Math.round(val * 100);
+    val = Math.max(0, Math.min(100, v));
+    if (!fromInput) {
+      input.value = fmt(Math.round(val * 100) / 100);
+      if (Math.round(val * 100) !== before && navigator.vibrate) navigator.vibrate(4);
+    }
+    draw();
+  }
+
+  el.addEventListener('pointerdown', e => {
+    cancelAnimationFrame(raf);
+    el.setPointerCapture(e.pointerId);
+    input.blur(); // cache le clavier pendant qu'on fait glisser
+    drag = { x: e.clientX, start: val, lastX: e.clientX, lastT: performance.now(), v: 0 };
+  });
+  el.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const now = performance.now(), dt = Math.max(1, now - drag.lastT);
+    drag.v = (e.clientX - drag.lastX) / dt;
+    drag.lastX = e.clientX; drag.lastT = now;
+    setVal(drag.start - (e.clientX - drag.x) / PX / 100);
+  });
+  const release = () => {
+    if (!drag) return;
+    // Élan limité : un geste rapide fait défiler, sans partir trop loin.
+    let v = Math.max(-1.2, Math.min(1.2, drag.v)); // px / ms
+    const recent = performance.now() - drag.lastT < 80;
+    drag = null;
+    if (!recent) v = 0;
+    let last = performance.now();
+    const step = now => {
+      const dt = now - last; last = now;
+      v *= Math.pow(0.88, dt / 16);
+      if (Math.abs(v) < 0.02 || !alive) { setVal(Math.round(val * 100) / 100); return; }
+      setVal(val - (v * dt) / PX / 100);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); setVal(val + 0.01); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); setVal(val - 0.01); }
+  });
+  input.addEventListener('input', () => { const v = parseNum(input.value); if (v != null) setVal(v, true); });
+
+  requestAnimationFrame(draw);
+  return () => { alive = false; cancelAnimationFrame(raf); };
+}
+
 export async function renderEditor(root, id, { go, toast }) {
   const f = await dbF.get(id);
   if (!f) return go('#/');
@@ -316,10 +405,12 @@ export async function renderEditor(root, id, { go, toast }) {
         <span class="mono tiny cyan tracking">${esc(SHAPES[shape.type].label.toUpperCase())}${nbType > 1 ? ' ' + index : ''}</span>
         <h2 id="stitle" class="display xs">${shape.type === 'ouverture' ? esc(edgeName.charAt(0).toUpperCase() + edgeName.slice(1)) : 'Côté ' + esc(edgeName)}</h2>
         ${lie ? `<span class="muted small">Pour l'instant déduit : ${fmt(lie.v)} m (${esc(lie.source)}). Saisis une valeur pour le mesurer à part.</span>` : ''}
-        <label class="readout">
-          <span class="mono tiny tracking">MÉTRAGE LASER</span>
+        <div class="readout">
+          <label for="val" class="mono tiny tracking">MÉTRAGE LASER</label>
           <span class="row"><input id="val" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${cur ? fmt(cur.valeur) : ''}"><span class="unit">m</span></span>
-        </label>
+          <div class="ruler" id="ruler" role="slider" aria-label="Réglette : fais glisser pour ajuster au centimètre" tabindex="0"><canvas></canvas><span class="needle"></span></div>
+          <span class="mono tiny muted ruler-hint">Fais glisser la réglette : 1 trait = 1 cm</span>
+        </div>
         <p class="error" id="serr" hidden></p>
         <div class="proof" id="proof"></div>
         ${isPente ? `<label class="toggle box"><span class="col"><strong>Pignon symétrique</strong><span class="small muted2">L'autre pente prend la même valeur si elle n'est pas mesurée</span></span><input type="checkbox" id="sym" ${sym ? 'checked' : ''}></label>` : ''}
@@ -344,10 +435,12 @@ export async function renderEditor(root, id, { go, toast }) {
     };
     renderProof();
 
-    const close = () => { wrap.hidden = true; wrap.innerHTML = ''; st.sel = null; redraw(); };
+    let stopRuler = () => {};
+    const close = () => { stopRuler(); wrap.hidden = true; wrap.innerHTML = ''; st.sel = null; redraw(); };
     wrap.querySelector('#sbg').onclick = close;
     const input = wrap.querySelector('#val');
     setTimeout(() => input.focus(), 50);
+    stopRuler = setupRuler(wrap.querySelector('#ruler'), input, cur?.valeur ?? lie?.v ?? 0);
 
     wrap.querySelector('#ok').onclick = async () => {
       const v = parseNum(input.value);

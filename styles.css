@@ -247,6 +247,12 @@ button { cursor: pointer; }
 .readout .row { display: flex; align-items: baseline; gap: 8px; }
 .readout input { border: 0; outline: 0; background: transparent; color: var(--text); font-family: var(--display); font-size: 46px; font-weight: 700; letter-spacing: -1px; width: 100%; min-width: 0; padding: 0; text-shadow: 0 0 24px rgba(34,211,238,.7); }
 .readout .unit { font-family: var(--display); font-size: 22px; }
+.ruler { position: relative; height: 54px; margin: 4px -8px 0; touch-action: none; cursor: ew-resize; user-select: none; -webkit-user-select: none; -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
+.ruler:focus-visible { outline: none; }
+.ruler canvas { width: 100%; height: 100%; display: block; }
+.ruler .needle { position: absolute; left: 50%; top: 24px; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--amber); box-shadow: 0 0 10px rgba(251,191,36,.9); }
+.ruler .needle::before { content: ''; position: absolute; left: 50%; top: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: var(--amber); }
+.ruler-hint { text-align: center; }
 .proof { display: flex; align-items: center; gap: 12px; }
 .proof img { width: 76px; height: 60px; object-fit: cover; border-radius: 12px; border: 1px solid rgba(163,230,53,.6); }
 .row-btns { display: flex; gap: 8px; }
