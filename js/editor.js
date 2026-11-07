@@ -231,6 +231,8 @@ export async function renderEditor(root, id, { go, toast }) {
   }
 
   function redraw() {
+    // L'écran a été quitté : on arrête de suivre sa taille.
+    if (!stage.isConnected) { ro?.disconnect(); return; }
     const k = kk();
     let tmp = '';
     const pts = [...st.temp];
