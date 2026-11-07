@@ -480,6 +480,23 @@ export async function route() {
 window.addEventListener('hashchange', route);
 route();
 
+// Mises à jour automatiques : quand une nouvelle version est publiée,
+// l'appli la récupère et se recharge d'elle-même (sauf en plein tracé).
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    const reload = () => location.reload();
+    if (document.body.classList.contains('editor-mode')) {
+      toast(t('update_ready'));
+      window.addEventListener('hashchange', reload, { once: true });
+    } else reload();
+  });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    setInterval(check, 30 * 60 * 1000);
+  }).catch(() => {});
 }

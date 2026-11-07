@@ -214,6 +214,7 @@ const fr = {
   err_too_big: 'Plus de 100 m ? Vérifie la virgule.',
   saved_no_proof: 'Cote enregistrée, sans photo du laser.',
   save_error: 'Erreur d\'enregistrement',
+  update_ready: 'Nouvelle version prête : elle s\'installera en quittant cet écran.',
   plus_cote: '+ cote',
   plus_cotes: '+ cotes',
 };
@@ -405,6 +406,7 @@ const en = {
   err_too_big: 'More than 100 m? Check the decimal point.',
   saved_no_proof: 'Measurement saved, without a laser photo.',
   save_error: 'Save error',
+  update_ready: 'New version ready: it will install when you leave this screen.',
   plus_cote: '+ size',
   plus_cotes: '+ sizes',
 };
@@ -596,6 +598,7 @@ const ru = {
   err_too_big: 'Больше 100 м? Проверьте запятую.',
   saved_no_proof: 'Размер сохранён без фото лазера.',
   save_error: 'Ошибка сохранения',
+  update_ready: 'Новая версия готова: она установится, когда вы выйдете с этого экрана.',
   plus_cote: '+ размер',
   plus_cotes: '+ размеры',
 };
@@ -787,6 +790,7 @@ const ro = {
   err_too_big: 'Peste 100 m? Verifică virgula.',
   saved_no_proof: 'Cotă salvată, fără fotografie laser.',
   save_error: 'Eroare la salvare',
+  update_ready: 'Versiune nouă pregătită: se instalează când ieși de pe acest ecran.',
   plus_cote: '+ cotă',
   plus_cotes: '+ cote',
 };
@@ -978,6 +982,7 @@ const tr = {
   err_too_big: '100 m\'den fazla mı? Virgülü kontrol et.',
   saved_no_proof: 'Ölçü kaydedildi, lazer fotoğrafı yok.',
   save_error: 'Kayıt hatası',
+  update_ready: 'Yeni sürüm hazır: bu ekrandan çıkınca yüklenecek.',
   plus_cote: '+ ölçü',
   plus_cotes: '+ ölçüler',
 };
@@ -1169,6 +1174,7 @@ const ku = {
   err_too_big: 'Ji 100 m zêdetir? Bêhnokê kontrol bike.',
   saved_no_proof: 'Pîvan hat tomarkirin, bê wêneya lazerê.',
   save_error: 'Çewtiya tomarkirinê',
+  update_ready: 'Guhertoya nû amade ye: dema tu ji vê ekranê derkevî dê were sazkirin.',
   plus_cote: '+ pîvan',
   plus_cotes: '+ pîvan',
 };
