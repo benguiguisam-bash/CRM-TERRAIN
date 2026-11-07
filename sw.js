@@ -1,9 +1,9 @@
 // Mode hors ligne : l'appli se charge même sans réseau sur le chantier.
-const CACHE = 'crm-terrain-v4';
+const CACHE = 'crm-terrain-v5';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest', './icon.svg',
   './js/app.js', './js/db.js', './js/geometry.js', './js/checks.js', './js/ign.js',
-  './js/images.js', './js/overlay.js', './js/editor.js', './js/i18n.js', './js/map.js',
+  './js/images.js', './js/overlay.js', './js/editor.js', './js/i18n.js', './js/map.js', './js/view3d.js',
 ];
 
 self.addEventListener('install', e => {
@@ -18,9 +18,22 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   // Photos aériennes IGN : gardées en cache pour revoir la vue du dessus hors ligne.
+  // La 3D les demande en mode CORS : une copie « opaque » (vue du dessus) ne lui suffit pas.
   if (url.hostname === 'data.geopf.fr' && url.pathname.includes('/wmts')) {
+    const cors = e.request.mode === 'cors';
+    e.respondWith(caches.open('crm-terrain-tuiles').then(c => c.match(e.request.url).then(hit => {
+      if (hit && !(cors && hit.type === 'opaque')) return hit;
+      return fetch(cors ? e.request : new Request(e.request.url, { mode: 'cors' })).catch(() => fetch(e.request)).then(res => {
+        c.put(e.request.url, res.clone());
+        return res;
+      });
+    })));
+    return;
+  }
+  // Bibliothèque 3D (version figée) : gardée en cache pour la 3D hors ligne.
+  if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.startsWith('/npm/three@0.160.0/')) {
     e.respondWith(caches.open('crm-terrain-tuiles').then(c => c.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-      c.put(e.request, res.clone());
+      if (res.ok) c.put(e.request, res.clone());
       return res;
     }))));
     return;

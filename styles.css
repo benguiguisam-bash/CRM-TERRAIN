@@ -200,6 +200,16 @@ button { cursor: pointer; }
 .drag-ghost { position: fixed; left: 0; top: 0; width: 72px; height: 72px; border-radius: 16px; overflow: hidden; border: 3px solid var(--cyan); box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 20px rgba(34,211,238,.6); pointer-events: none; z-index: 60; }
 .drag-ghost img { width: 100%; height: 100%; object-fit: cover; }
 
+/* ---------- maquette 3D ---------- */
+.btn-3d svg { color: currentColor; }
+.pad-x .btn-3d { margin-top: 10px; }
+.v3d { position: relative; height: 100dvh; max-width: 520px; margin: 0 auto; background: var(--bg); overflow: hidden; }
+.v3d-stage { position: absolute; inset: 0; touch-action: none; }
+.v3d-stage canvas { width: 100% !important; height: 100% !important; display: block; }
+.v3d .ed-title { gap: 2px; font-size: 14px; font-weight: 600; }
+.v3d-hint { position: absolute; left: 16px; right: 16px; bottom: calc(20px + var(--safe-b)); text-align: center; font-size: 14px; color: var(--muted2); pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+.v3d-hint:empty { display: none; }
+
 /* ---------- résultat ---------- */
 .hero { margin: 8px 16px 0; display: flex; align-items: center; gap: 16px; padding: 16px; border-radius: 22px; border: 1px solid var(--line); background: var(--panel); }
 .hero .ring { stroke: #64748B; }

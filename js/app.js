@@ -23,6 +23,7 @@ const ICON = {
   refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>',
   check: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   globe: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  cube: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/></svg>',
   print: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M8 14h8v7H8z"/></svg>',
 };
 
@@ -357,7 +358,8 @@ async function viewClient(id) {
     <a class="plan-preview" href="#/client/${c.id}/plan">
       ${mapSvg(ign, { widthPx: 358, aspect: 358 / 190, assign: assignMap(fs) }).svg}
       <span class="plan-badge">${esc(t('plan_placed', { a: fs.filter(f => f.ignCote != null).length, t: fs.length }))}</span>
-    </a>` : ''}
+    </a>
+    <div class="pad-x"><a class="btn glass full btn-3d" href="#/client/${c.id}/3d">${ICON.cube}${esc(t('btn_3d'))}</a></div>` : ''}
 
     <div class="section-label mono">${esc(t('facades_label'))}</div>
     <div class="thumbs">
@@ -453,6 +455,7 @@ async function viewPlan(id) {
     </div>
     <div class="plan-actions">
       ${selF && selF.ignCote != null ? `<button class="btn glass" id="unplace">${esc(t('plan_remove'))}</button>` : ''}
+      ${hasContour && !plan.pick ? `<a class="btn primary btn-3d" href="#/client/${c.id}/3d">${ICON.cube}${esc(t('btn_3d'))}</a>` : ''}
       ${hasContour && ign.candidats?.length > 1 ? `<button class="link small" id="pick">${esc(plan.pick ? t('plan_cancel_pick') : t('plan_wrong_house'))}</button>` : ''}
     </div>
   </div>`;
@@ -676,12 +679,18 @@ export async function route() {
   const h = location.hash.replace(/^#/, '') || '/';
   const parts = h.split('/').filter(Boolean);
   window.scrollTo(0, 0);
-  document.body.classList.toggle('editor-mode', parts[0] === 'facade' && !parts[2]);
+  document.body.classList.toggle('editor-mode', (parts[0] === 'facade' && !parts[2]) || parts[2] === '3d');
   try {
     if (!parts.length) return await viewTournee();
     if (parts[0] === 'client' && parts[1] === 'nouveau') return await viewClientForm(null);
     if (parts[0] === 'client' && parts[2] === 'modifier') return await viewClientForm(parts[1]);
     if (parts[0] === 'client' && parts[2] === 'plan') return await viewPlan(parts[1]);
+    if (parts[0] === 'client' && parts[2] === '3d') {
+      const c3 = await dbC.get(parts[1]);
+      if (!c3) return go('#/');
+      const { render3d } = await import('./view3d.js');
+      return await render3d(app, c3, await dbF.byClient(parts[1]), { go });
+    }
     if (parts[0] === 'client') return await viewClient(parts[1]);
     if (parts[0] === 'facade' && parts[2] === 'resultat') return await viewResultat(parts[1]);
     if (parts[0] === 'facade') return await renderEditor(app, parts[1], { go, toast });
