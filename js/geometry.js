@@ -1,10 +1,21 @@
 // Formes dessinées sur la photo et calcul des surfaces à partir des cotes laser.
 // Les surfaces viennent UNIQUEMENT des métrages saisis : la photo sert de croquis.
 
+import { t, numLocale } from './i18n.js';
+
+// Libellés traduits à la volée (getters) : on peut changer de langue sans recharger.
+function shapeDef(labelKey, points, edgeKeys) {
+  return {
+    points,
+    get label() { return t(labelKey); },
+    get edges() { return edgeKeys.map(k => t(k)); },
+  };
+}
+
 export const SHAPES = {
-  mur: { label: 'Mur', points: 4, edges: ['haut', 'droite', 'bas', 'gauche'] },
-  pignon: { label: 'Pignon', points: 3, edges: ['pente gauche', 'pente droite', 'base'] },
-  ouverture: { label: 'Ouverture', points: 4, edges: ['largeur', 'hauteur', 'largeur (bas)', 'hauteur (gauche)'] },
+  mur: shapeDef('shape_mur', 4, ['e_top', 'e_right', 'e_bottom', 'e_left']),
+  pignon: shapeDef('shape_pignon', 3, ['e_slope_l', 'e_slope_r', 'e_base']),
+  ouverture: shapeDef('shape_ouverture', 4, ['e_width', 'e_height', 'e_width_b', 'e_height_l']),
 };
 
 // Remet les points dans un ordre fixe, quel que soit l'ordre des touches.
@@ -66,10 +77,10 @@ export function edgeValues(facade, shape) {
     const murW = mur ? rectDims(facade, mur).largeur : null;
     out[0] = pg != null ? { v: pg, etat: 'mesure' } : { v: null, etat: 'manquant' };
     if (pdOwn != null) out[1] = { v: pdOwn, etat: 'mesure' };
-    else if (sym && pg != null) out[1] = { v: pg, etat: 'lie', source: 'pente gauche (symétrique)' };
+    else if (sym && pg != null) out[1] = { v: pg, etat: 'lie', source: t('lie_sym') };
     else out[1] = { v: null, etat: 'manquant' };
     if (baseOwn != null) out[2] = { v: baseOwn, etat: 'mesure' };
-    else if (murW != null) out[2] = { v: murW, etat: 'lie', source: 'largeur du mur' };
+    else if (murW != null) out[2] = { v: murW, etat: 'lie', source: t('lie_wall_width') };
     else out[2] = { v: null, etat: 'manquant' };
     return out;
   }
@@ -77,7 +88,7 @@ export function edgeValues(facade, shape) {
   const opposite = [2, 3, 0, 1];
   for (let i = 0; i < 4; i++) {
     if (own[i] != null) out[i] = { v: own[i], etat: 'mesure' };
-    else if (own[opposite[i]] != null) out[i] = { v: own[opposite[i]], etat: 'lie', source: 'côté ' + SHAPES[shape.type].edges[opposite[i]] };
+    else if (own[opposite[i]] != null) out[i] = { v: own[opposite[i]], etat: 'lie', source: t('lie_side', SHAPES[shape.type].edges[opposite[i]]) };
     else out[i] = { v: null, etat: 'manquant' };
   }
   return out;
@@ -97,7 +108,7 @@ export function shapeArea(facade, shape) {
     if (a == null || b == null || c == null) return { aire: null };
     const s = (a + b + c) / 2;
     const h2 = s * (s - a) * (s - b) * (s - c);
-    if (h2 <= 0) return { aire: null, erreur: 'Ces 3 longueurs ne forment pas un triangle : vérifie les pentes et la base.' };
+    if (h2 <= 0) return { aire: null, erreur: t('tri_error') };
     return { aire: Math.sqrt(h2), base: c, pentes: [a, b] };
   }
   const { largeur, hauteur } = rectDims(facade, shape);
@@ -149,7 +160,7 @@ export function totals(facade) {
 
 export function fmt(n, d = 2) {
   if (n == null || isNaN(n)) return '—';
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  return n.toLocaleString(numLocale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 export function parseNum(str) {

@@ -74,6 +74,14 @@ button { cursor: pointer; }
 .round.ghost { visibility: hidden; }
 .round.blur, .blur { background: rgba(5,7,13,.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.18); }
 
+/* ---------- langue ---------- */
+.lang-btn { height: 44px; padding: 0 12px; border-radius: 22px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); display: inline-flex; align-items: center; gap: 6px; color: var(--cyan-l); font-size: 13px; font-weight: 700; }
+.lang-list { display: flex; flex-direction: column; gap: 8px; }
+.lang-item { min-height: 54px; padding: 0 16px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.04); display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600; text-align: left; }
+.lang-item .mono { color: var(--muted); }
+.lang-item.on { border-color: var(--cyan); background: rgba(34,211,238,.14); box-shadow: 0 0 16px rgba(34,211,238,.3); }
+.lang-item.on .mono { color: var(--cyan-l); }
+
 /* ---------- tournée ---------- */
 .holo { margin: 18px 16px 0; height: 170px; border-radius: 24px; border: 1px solid var(--line); background: var(--panel); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 20px 40px rgba(0,0,0,.5); overflow: hidden; display: flex; justify-content: space-between; padding: 18px; }
 .holo-grid { position: absolute; left: -40%; right: -40%; bottom: -60px; height: 160px; transform: perspective(300px) rotateX(62deg); transform-origin: 50% 0; background-image: repeating-linear-gradient(90deg, rgba(34,211,238,.28) 0 1px, transparent 1px 28px), repeating-linear-gradient(0deg, rgba(34,211,238,.28) 0 1px, transparent 1px 28px); }

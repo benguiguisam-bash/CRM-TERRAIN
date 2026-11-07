@@ -2,25 +2,24 @@
 const GEOCODE = 'https://data.geopf.fr/geocodage/search';
 const WFS = 'https://data.geopf.fr/wfs/ows';
 
-// Codes "matériaux des murs" (fichiers fonciers) : un chiffre par matériau.
-const MATERIAUX = {
-  1: 'Pierre', 2: 'Meulière', 3: 'Béton', 4: 'Briques',
-  5: 'Aggloméré', 6: 'Bois', 9: 'Autres',
-};
+import { t } from './i18n.js';
 
+// Codes "matériaux des murs" (fichiers fonciers) : un chiffre par matériau.
+// Le code est gardé tel quel et traduit à l'affichage, dans la langue choisie.
 export function decodeMateriaux(code) {
   if (code == null) return null;
-  const noms = String(code).split('').map(Number).filter(d => d && MATERIAUX[d]).map(d => MATERIAUX[d]);
+  const mat = t('mat');
+  const noms = String(code).split('').map(Number).filter(d => d && mat[d]).map(d => mat[d]);
   return noms.length ? [...new Set(noms)].join(' / ') : null;
 }
 
 export async function geocode(adresse) {
   const url = `${GEOCODE}?q=${encodeURIComponent(adresse)}&limit=1`;
   const r = await fetch(url);
-  if (!r.ok) throw new Error('Adresse introuvable');
+  if (!r.ok) throw new Error(t('err_address'));
   const d = await r.json();
   const f = d.features?.[0];
-  if (!f) throw new Error('Adresse introuvable');
+  if (!f) throw new Error(t('err_address'));
   const [lon, lat] = f.geometry.coordinates;
   return { lat, lon, label: f.properties.label, score: f.properties.score };
 }
@@ -54,7 +53,7 @@ export async function fetchBatiment(adresse) {
   const bbox = `${pos.lat - d},${pos.lon - d},${pos.lat + d},${pos.lon + d},urn:ogc:def:crs:EPSG::4326`;
   const url = `${WFS}?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:batiment&OUTPUTFORMAT=application/json&COUNT=50&BBOX=${bbox}`;
   const r = await fetch(url);
-  if (!r.ok) throw new Error('Service IGN indisponible');
+  if (!r.ok) throw new Error(t('err_ign_service'));
   const data = await r.json();
   const feats = data.features || [];
   if (!feats.length) return { ...pos, trouve: false };
@@ -75,7 +74,7 @@ export async function fetchBatiment(adresse) {
     hauteur: p.hauteur ?? null,
     faitage,
     niveaux: p.nombre_d_etages ?? null,
-    materiaux: decodeMateriaux(p.materiaux_des_murs),
+    materiauxCode: p.materiaux_des_murs ?? null,
     usage: p.usage_1 ?? null,
     fetchedAt: new Date().toISOString(),
   };

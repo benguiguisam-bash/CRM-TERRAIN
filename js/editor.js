@@ -4,19 +4,20 @@ import { facades as dbF, clients as dbC, uid } from './db.js';
 import { SHAPES, normalize, edgePoints, edgeValues, totals, requiredStatus, fmt, parseNum } from './geometry.js';
 import { shapesSvg, verticesSvg, esc } from './overlay.js';
 import { blobUrl, compress, pickPhoto } from './images.js';
+import { t } from './i18n.js';
 
 const TOOLS = [
-  { id: 'coter', label: 'Coter', icon: '<path d="M4 20 20 4M7 20H4v-3M17 4h3v3"/>' },
-  { id: 'mur', label: 'Mur', icon: '<rect x="3" y="6" width="18" height="12"/>' },
-  { id: 'pignon', label: 'Pignon', icon: '<path d="M3 18 12 6l9 12z"/>' },
-  { id: 'ouverture', label: 'Ouverture', icon: '<rect x="6" y="4" width="12" height="16" stroke-dasharray="3 2"/>' },
+  { id: 'coter', icon: '<path d="M4 20 20 4M7 20H4v-3M17 4h3v3"/>' },
+  { id: 'mur', icon: '<rect x="3" y="6" width="18" height="12"/>' },
+  { id: 'pignon', icon: '<path d="M3 18 12 6l9 12z"/>' },
+  { id: 'ouverture', icon: '<rect x="6" y="4" width="12" height="16" stroke-dasharray="3 2"/>' },
 ];
 
 const HINTS = {
-  coter: 'Touche un côté pour saisir son métrage. Fais glisser un point pour l\'ajuster.',
-  mur: n => `Touche les 4 coins du mur (${n}/4). Garde le doigt appuyé pour viser avec la loupe.`,
-  pignon: n => `Touche les 2 coins bas du pignon puis le sommet (${n}/3). Les coins du mur s'aimantent.`,
-  ouverture: n => `Touche les 4 coins de la fenêtre ou de la porte (${n}/4).`,
+  coter: () => t('hint_coter'),
+  mur: n => t('hint_mur', n),
+  pignon: n => t('hint_pignon', n),
+  ouverture: n => t('hint_ouv', n),
 };
 
 // Réglette façon molette : on la fait glisser pour ajuster la valeur par pas de 10 cm,
@@ -122,22 +123,22 @@ export async function renderEditor(root, id, { go, toast }) {
   root.innerHTML = `
   <div class="editor">
     <div class="stage" id="stage">
-      <svg id="svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Photo de la façade, zone de tracé">
+      <svg id="svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(t('photo_aria'))}">
         <image href="${url}" x="0" y="0" width="${W}" height="${H}"/>
         <g id="layer"></g>
       </svg>
       <div class="loupe" id="loupe" hidden><span class="cross"></span></div>
       <div class="hud-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <header class="ed-top">
-        <a class="round blur" href="#/client/${f.clientId}" aria-label="Retour à la fiche client"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></a>
+        <a class="round blur" href="#/client/${f.clientId}" aria-label="${esc(t('back_card'))}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></a>
         <button class="ed-title blur" id="rename"><span id="fname">${esc(f.nom)}</span><span class="mono tiny cyan">${esc(client?.nom || '')}</span></button>
-        <button class="round blur" id="del" aria-label="Supprimer cette façade"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        <button class="round blur" id="del" aria-label="${esc(t('delete_facade_aria'))}"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
       </header>
     </div>
 
-    <div class="dock" role="toolbar" aria-label="Outils de tracé">
-      ${TOOLS.map(t => `<button class="tool" data-tool="${t.id}" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${t.icon}</svg>${t.label}</button>`).join('')}
-      <button class="tool" id="undo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>Annuler</button>
+    <div class="dock" role="toolbar" aria-label="${esc(t('toolbar_aria'))}">
+      ${TOOLS.map(tl => `<button class="tool" data-tool="${tl.id}" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${tl.icon}</svg>${esc(t('tool_' + tl.id))}</button>`).join('')}
+      <button class="tool" id="undo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>${esc(t('undo'))}</button>
     </div>
 
     <div class="ed-info">
@@ -163,7 +164,7 @@ export async function renderEditor(root, id, { go, toast }) {
   function save({ invalidate = true } = {}) {
     f.updatedAt = new Date().toISOString();
     if (invalidate) f.valide = false;
-    queue = queue.then(() => dbF.put(f)).catch(err => { console.error(err); toast('Erreur d\'enregistrement'); });
+    queue = queue.then(() => dbF.put(f)).catch(err => { console.error(err); toast(t('save_error')); });
     return queue;
   }
 
@@ -251,18 +252,17 @@ export async function renderEditor(root, id, { go, toast }) {
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', on);
     });
-    const h = HINTS[st.tool];
-    root.querySelector('#hint').textContent = typeof h === 'function' ? h(st.temp.length) : (f.shapes.length ? h : 'Commence par tracer le mur.');
+    root.querySelector('#hint').textContent = st.tool === 'coter' && !f.shapes.length ? t('hint_start') : HINTS[st.tool](st.temp.length);
     const { missing: miss, total: nbEdges } = requiredStatus(f);
-    const t = totals(f);
+    const tt = totals(f);
     const prog = root.querySelector('#prog');
     prog.innerHTML = f.shapes.length
-      ? `<span class="mono small ${miss ? 'amber' : 'lime'}">${miss ? `${miss} côté${miss > 1 ? 's' : ''} à mesurer` : 'Toutes les cotes sont saisies'}</span>
+      ? `<span class="mono small ${miss ? 'amber' : 'lime'}">${esc(miss ? t('missing_sides', miss) : t('all_cotes'))}</span>
          <span class="bar-track"><span style="width:${nbEdges ? Math.round(((nbEdges - miss) / nbEdges) * 100) : 0}%"></span></span>`
       : '';
     const btn = root.querySelector('#result');
-    btn.disabled = !t.complet;
-    btn.textContent = t.complet ? `Voir le résultat · ${fmt(t.net, 1)} m²` : (f.shapes.length ? 'Saisis les cotes manquantes' : 'Trace d\'abord le mur');
+    btn.disabled = !tt.complet;
+    btn.textContent = tt.complet ? t('see_result', fmt(tt.net, 1)) : (f.shapes.length ? t('enter_missing') : t('draw_wall_first'));
   }
 
   function showLoupe(e, p) {
@@ -337,9 +337,9 @@ export async function renderEditor(root, id, { go, toast }) {
         f.shapes.push({ id: uid(), type, points: normalize(type, st.temp) });
         st.temp = [];
         save();
-        if (type === 'mur') { st.tool = 'coter'; toast('Mur tracé. Ajoute le pignon ou les ouvertures, puis saisis les cotes.'); }
-        else if (type === 'pignon') { st.tool = 'coter'; toast('Pignon tracé.'); }
-        else toast('Ouverture ajoutée. Trace la suivante ou passe en mode Coter.');
+        if (type === 'mur') { st.tool = 'coter'; toast(t('wall_drawn')); }
+        else if (type === 'pignon') { st.tool = 'coter'; toast(t('pignon_drawn')); }
+        else toast(t('opening_added'));
       }
       if (navigator.vibrate) navigator.vibrate(12);
     } else if (d.kind === 'move' && d.moved) {
@@ -363,7 +363,7 @@ export async function renderEditor(root, id, { go, toast }) {
     const last = f.shapes[f.shapes.length - 1];
     if (!last) return;
     const hasCotes = f.cotes[last.id] && Object.keys(f.cotes[last.id]).length;
-    if (hasCotes && !confirm(`Supprimer ${SHAPES[last.type].label.toLowerCase()} et ses cotes ?`)) return;
+    if (hasCotes && !confirm(t('confirm_remove_last', SHAPES[last.type].label))) return;
     f.shapes.pop();
     delete f.cotes[last.id];
     await save();
@@ -371,12 +371,12 @@ export async function renderEditor(root, id, { go, toast }) {
   };
 
   root.querySelector('#rename').onclick = async () => {
-    const n = prompt('Nom de la façade', f.nom);
+    const n = prompt(t('rename_prompt'), f.nom);
     if (n && n.trim()) { f.nom = n.trim(); root.querySelector('#fname').textContent = f.nom; await save({ invalidate: false }); }
   };
 
   root.querySelector('#del').onclick = async () => {
-    if (!confirm(`Supprimer « ${f.nom} », sa photo et ses cotes ?`)) return;
+    if (!confirm(t('confirm_delete_facade', f.nom))) return;
     await dbF.remove(f.id);
     go(`#/client/${f.clientId}`);
   };
@@ -406,29 +406,29 @@ export async function renderEditor(root, id, { go, toast }) {
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="stitle">
         <div class="handle"></div>
         <span class="mono tiny cyan tracking">${esc(SHAPES[shape.type].label.toUpperCase())}${nbType > 1 ? ' ' + index : ''}</span>
-        <h2 id="stitle" class="display xs">${shape.type === 'ouverture' ? esc(edgeName.charAt(0).toUpperCase() + edgeName.slice(1)) : 'Côté ' + esc(edgeName)}</h2>
-        ${lie ? `<span class="muted small">Pour l'instant déduit : ${fmt(lie.v)} m (${esc(lie.source)}). Saisis une valeur pour le mesurer à part.</span>` : ''}
+        <h2 id="stitle" class="display xs">${shape.type === 'ouverture' ? esc(edgeName.charAt(0).toUpperCase() + edgeName.slice(1)) : esc(t('side', edgeName))}</h2>
+        ${lie ? `<span class="muted small">${esc(t('deduced_now', fmt(lie.v), lie.source))}</span>` : ''}
         <div class="readout">
-          <label for="val" class="mono tiny tracking">MÉTRAGE LASER</label>
+          <label for="val" class="mono tiny tracking">${esc(t('laser_measure'))}</label>
           <span class="row"><input id="val" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${cur ? fmt(cur.valeur) : ''}"><span class="unit">m</span></span>
-          <div class="ruler" id="ruler" role="slider" aria-label="Réglette : fais glisser pour ajuster par pas de 10 cm" tabindex="0"><canvas></canvas><span class="needle"></span></div>
-          <span class="mono tiny muted ruler-hint">Fais glisser la réglette : 1 trait = 10 cm</span>
+          <div class="ruler" id="ruler" role="slider" aria-label="${esc(t('ruler_aria'))}" tabindex="0"><canvas></canvas><span class="needle"></span></div>
+          <span class="mono tiny muted ruler-hint">${esc(t('ruler_hint'))}</span>
         </div>
         <p class="error" id="serr" hidden></p>
         <div class="proof" id="proof"></div>
-        ${isPente ? `<label class="toggle box"><span class="col"><strong>Pignon symétrique</strong><span class="small muted2">L'autre pente prend la même valeur si elle n'est pas mesurée</span></span><input type="checkbox" id="sym" ${sym ? 'checked' : ''}></label>` : ''}
-        <button class="btn primary big" id="ok">Valider la cote</button>
+        ${isPente ? `<label class="toggle box"><span class="col"><strong>${esc(t('sym_title'))}</strong><span class="small muted2">${esc(t('sym_desc'))}</span></span><input type="checkbox" id="sym" ${sym ? 'checked' : ''}></label>` : ''}
+        <button class="btn primary big" id="ok">${esc(t('validate_cote'))}</button>
         <div class="row-btns">
-          ${cur ? '<button class="btn glass" id="clear">Effacer la cote</button>' : ''}
-          <button class="btn glass danger-text" id="rm">Supprimer ${shape.type === 'ouverture' ? 'l\'ouverture' : 'la forme'}</button>
+          ${cur ? `<button class="btn glass" id="clear">${esc(t('clear_cote'))}</button>` : ''}
+          <button class="btn glass danger-text" id="rm">${esc(shape.type === 'ouverture' ? t('remove_opening') : t('remove_shape'))}</button>
         </div>
       </div>`;
 
     const proofEl = wrap.querySelector('#proof');
     const renderProof = () => {
       proofEl.innerHTML = preuve
-        ? `<img src="${blobUrl(preuve)}" alt="Photo de l'écran du laser"><span class="col grow"><strong class="lime small">Preuve jointe</strong><span class="mono tiny muted">Photo de l'écran du laser</span></span><button class="btn glass sm" id="pp">Reprendre</button>`
-        : `<button class="btn glass full" id="pp"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Photographier l'écran du laser</button>`;
+        ? `<img src="${blobUrl(preuve)}" alt="${esc(t('proof_desc'))}"><span class="col grow"><strong class="lime small">${esc(t('proof_ok'))}</strong><span class="mono tiny muted">${esc(t('proof_desc'))}</span></span><button class="btn glass sm" id="pp">${esc(t('retake'))}</button>`
+        : `<button class="btn glass full" id="pp"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>${esc(t('take_laser_photo'))}</button>`;
       proofEl.querySelector('#pp').onclick = async () => {
         const file = await pickPhoto();
         if (!file) return;
@@ -448,13 +448,13 @@ export async function renderEditor(root, id, { go, toast }) {
     wrap.querySelector('#ok').onclick = async () => {
       const v = parseNum(input.value);
       const err = wrap.querySelector('#serr');
-      if (v == null || v <= 0) { err.textContent = 'Entre un métrage valide, par exemple 9,40.'; err.hidden = false; return; }
-      if (v > 100) { err.textContent = 'Plus de 100 m ? Vérifie la virgule.'; err.hidden = false; return; }
+      if (v == null || v <= 0) { err.textContent = t('err_value'); err.hidden = false; return; }
+      if (v > 100) { err.textContent = t('err_too_big'); err.hidden = false; return; }
       f.cotes[shape.id] = f.cotes[shape.id] || {};
       f.cotes[shape.id][sel.edge] = { valeur: v, preuve, at: new Date().toISOString() };
       if (isPente) { f.symetrique = f.symetrique || {}; f.symetrique[shape.id] = wrap.querySelector('#sym').checked; }
       save();
-      if (!preuve) toast('Cote enregistrée, sans photo du laser.');
+      if (!preuve) toast(t('saved_no_proof'));
       close();
       // Ouverture : enchaîne sur la hauteur si elle manque encore.
       if (shape.type === 'ouverture' && (sel.edge === 0 || sel.edge === 2) && edgeValues(f, shape)[1].v == null) {
@@ -465,7 +465,7 @@ export async function renderEditor(root, id, { go, toast }) {
     const clear = wrap.querySelector('#clear');
     if (clear) clear.onclick = async () => { delete f.cotes[shape.id][sel.edge]; await save(); close(); };
     wrap.querySelector('#rm').onclick = async () => {
-      if (!confirm('Supprimer cette forme et ses cotes ?')) return;
+      if (!confirm(t('confirm_remove_shape'))) return;
       f.shapes = f.shapes.filter(s => s.id !== shape.id);
       delete f.cotes[shape.id];
       await save();

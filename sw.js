@@ -1,9 +1,9 @@
 // Mode hors ligne : l'appli se charge même sans réseau sur le chantier.
-const CACHE = 'crm-terrain-v1';
+const CACHE = 'crm-terrain-v2';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest', './icon.svg',
   './js/app.js', './js/db.js', './js/geometry.js', './js/checks.js', './js/ign.js',
-  './js/images.js', './js/overlay.js', './js/editor.js',
+  './js/images.js', './js/overlay.js', './js/editor.js', './js/i18n.js',
 ];
 
 self.addEventListener('install', e => {

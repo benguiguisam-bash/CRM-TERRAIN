@@ -1,5 +1,6 @@
 // Dessin des formes (SVG) par-dessus la photo : partagé par l'éditeur et les vignettes.
 import { SHAPES, edgePoints, edgeValues, fmt } from './geometry.js';
+import { t } from './i18n.js';
 
 export const COLORS = {
   mesure: '#A3E635',
@@ -37,7 +38,7 @@ export function shapesSvg(facade, k, { labels = true, selected = null } = {}) {
       const cx = s.points.reduce((a, p) => a + p.x, 0) / 4;
       const cy = s.points.reduce((a, p) => a + p.y, 0) / 4;
       const ok = vals[0].v != null && vals[1].v != null;
-      const txt = ok ? `${fmt(vals[0].v)}×${fmt(vals[1].v)}` : '+ cotes';
+      const txt = ok ? `${fmt(vals[0].v)}×${fmt(vals[1].v)}` : t('plus_cotes');
       const fs = 10 * k, wbox = txt.length * 0.62 * fs + 12 * k, hbox = fs + 10 * k;
       out += `<g class="lbl"><rect x="${cx - wbox / 2}" y="${cy - hbox / 2}" width="${wbox}" height="${hbox}" rx="${hbox / 2}" fill="${ok ? 'rgba(26,46,5,0.92)' : '#FBBF24'}" ${ok ? `stroke="#A3E635" stroke-width="${k}"` : ''}/>` +
         `<text x="${cx}" y="${cy + fs * 0.36}" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="${fs}" fill="${ok ? '#ECFCCB' : '#05070D'}">${esc(txt)}</text></g>`;
@@ -52,7 +53,7 @@ export function shapesSvg(facade, k, { labels = true, selected = null } = {}) {
         if (s.type === 'pignon' && i === 2 && v.etat === 'manquant' && hasMur) return;
         if (s.type === 'pignon' && i === 1 && v.etat === 'manquant' && facade.symetrique?.[s.id] !== false) return;
         const [a, b] = edgePoints(s, i);
-        const txt = v.etat === 'mesure' ? `${fmt(v.v)} m` : '+ cote';
+        const txt = v.etat === 'mesure' ? `${fmt(v.v)} m` : t('plus_cote');
         const fs = (s.type === 'ouverture' ? 11 : 13) * k;
         const wbox = (txt.length * 0.62 * fs) + 16 * k;
         const hbox = fs + 12 * k;
