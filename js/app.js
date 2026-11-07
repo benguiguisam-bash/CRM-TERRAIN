@@ -1,7 +1,7 @@
 import { clients as dbC, facades as dbF, uid } from './db.js';
 import { totals, missingCount, fmt, parseNum } from './geometry.js';
 import { allChecks, pire, checkReference, niveauxLabel } from './checks.js';
-import { fetchBatiment, decodeMateriaux, choisirBatiment } from './ign.js';
+import { fetchBatiment, decodeMateriaux, choisirBatiment, suggestAdresses } from './ign.js';
 import { mapSvg } from './map.js';
 import { compress, blobUrl, pickPhoto } from './images.js';
 import { thumbSvg, esc, shapesSvg } from './overlay.js';
@@ -79,7 +79,8 @@ function clientEtat(c, fs) {
 async function refreshIgn(client, { silent = false } = {}) {
   if (!navigator.onLine) { if (!silent) toast(t('ign_offline')); return client; }
   try {
-    client.ign = await fetchBatiment(client.adresse);
+    const geo = client.geo && client.geo.label === client.adresse ? client.geo : null;
+    client.ign = await fetchBatiment(client.adresse, geo);
     client.ignErreur = null;
   } catch (e) {
     client.ignErreur = e.message || 'IGN';
@@ -204,7 +205,11 @@ async function viewClientForm(id) {
     </header>
     <form class="form" id="f" novalidate>
       <label class="field"><span>${esc(t('f_name'))}</span><input name="nom" required value="${esc(c.nom)}" placeholder="${esc(t('f_name_ph'))}"></label>
-      <label class="field"><span>${esc(t('f_address'))}</span><input name="adresse" required value="${esc(c.adresse)}" placeholder="${esc(t('f_address_ph'))}" autocomplete="street-address"></label>
+      <div class="field addr">
+        <label for="adresse">${esc(t('f_address'))}</label>
+        <input id="adresse" name="adresse" required value="${esc(c.adresse)}" placeholder="${esc(t('f_address_ph'))}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="addr-list">
+        <ul class="addr-list" id="addr-list" role="listbox" hidden></ul>
+      </div>
       <label class="field"><span>${esc(t('f_phone'))}</span><input name="telephone" type="tel" value="${esc(c.telephone)}" placeholder="06 12 34 56 78"></label>
       <label class="field"><span>${esc(t('f_rdv'))}</span><input name="rdv" type="datetime-local" value="${rdvLocal}"></label>
       <div class="row2">
@@ -225,6 +230,46 @@ async function viewClientForm(id) {
   </div>`;
 
   const form = app.querySelector('#f');
+
+  // Adresse : suggestions dès les premières lettres (Base Adresse Nationale).
+  const addr = form.querySelector('#adresse');
+  const list = form.querySelector('#addr-list');
+  let picked = c.geo && c.geo.label === c.adresse ? c.geo : null;
+  let timer = 0, ctrl = null, items = [], active = -1;
+  const closeList = () => { list.hidden = true; addr.setAttribute('aria-expanded', 'false'); active = -1; };
+  const showList = () => {
+    list.innerHTML = items.map((s, i) => `<li role="option" id="addr-${i}" data-i="${i}" class="${i === active ? 'on' : ''}" aria-selected="${i === active}">${esc(s.label)}</li>`).join('');
+    list.hidden = !items.length;
+    addr.setAttribute('aria-expanded', String(!!items.length));
+    addr.setAttribute('aria-activedescendant', active >= 0 ? `addr-${active}` : '');
+  };
+  const choose = s => { addr.value = s.label; picked = s; items = []; closeList(); };
+  addr.addEventListener('input', () => {
+    picked = null;
+    clearTimeout(timer);
+    const q = addr.value.trim();
+    if (q.length < 3 || !navigator.onLine) { items = []; closeList(); return; }
+    timer = setTimeout(async () => {
+      ctrl?.abort(); ctrl = new AbortController();
+      try { items = await suggestAdresses(q, ctrl.signal); active = -1; showList(); } catch { /* frappe suivante */ }
+    }, 220);
+  });
+  addr.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(items.length - 1, active + 1); showList(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(0, active - 1); showList(); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(items[active]); }
+    else if (e.key === 'Escape') closeList();
+  });
+  // pointerdown (et pas click) : le choix passe avant que le champ perde le focus.
+  list.addEventListener('pointerdown', e => {
+    const li = e.target.closest('[data-i]');
+    if (!li) return;
+    e.preventDefault();
+    choose(items[Number(li.dataset.i)]);
+  });
+  addr.addEventListener('blur', () => setTimeout(closeList, 150));
+
   form.onsubmit = async e => {
     e.preventDefault();
     const d = new FormData(form);
@@ -241,6 +286,7 @@ async function viewClientForm(id) {
       notes: d.get('notes').trim(),
       updatedAt: new Date().toISOString(),
     });
+    if (picked && picked.label === adresse) c.geo = { label: picked.label, lon: picked.lon, lat: picked.lat };
     if (adresseChangee) { c.ign = null; c.ignErreur = null; c.ignIncorrect = false; }
     await dbC.put(c);
     go(`#/client/${c.id}`);

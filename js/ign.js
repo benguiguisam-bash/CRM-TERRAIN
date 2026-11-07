@@ -103,8 +103,18 @@ function parseBatiment(f, lat0) {
   };
 }
 
-export async function fetchBatiment(adresse) {
-  const pos = await geocode(adresse);
+// Suggestions d'adresses pendant la saisie (Base Adresse Nationale, via l'IGN).
+export async function suggestAdresses(texte, signal) {
+  const url = `https://data.geopf.fr/geocodage/completion?text=${encodeURIComponent(texte)}&type=StreetAddress&maximumResponses=6`;
+  const r = await fetch(url, { signal });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return (d.results || []).map(x => ({ label: x.fulltext, lon: x.x, lat: x.y, kind: x.kind }));
+}
+
+// coords : position déjà connue (adresse choisie dans les suggestions) -> pas de géocodage.
+export async function fetchBatiment(adresse, coords = null) {
+  const pos = coords ? { lat: coords.lat, lon: coords.lon, label: adresse, score: 1 } : await geocode(adresse);
   const d = 0.0005; // ~50 m autour de l'adresse
   const bbox = `${pos.lat - d},${pos.lon - d},${pos.lat + d},${pos.lon + d},urn:ogc:def:crs:EPSG::4326`;
   const url = `${WFS}?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:batiment&OUTPUTFORMAT=application/json&COUNT=80&BBOX=${bbox}`;
