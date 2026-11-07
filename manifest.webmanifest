@@ -1,0 +1,15 @@
+{
+  "name": "CRM Terrain",
+  "short_name": "Terrain",
+  "description": "Métrage de façades sur place : photo, tracé, cotes laser et contrôles.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05070D",
+  "theme_color": "#05070D",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
