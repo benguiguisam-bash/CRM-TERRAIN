@@ -2,6 +2,7 @@
 // les autres sources servent à repérer les erreurs.
 import { mainMur, rectDims, photoHeightEstimate, totals, edgeValues, SHAPES } from './geometry.js';
 import { t, numLocale } from './i18n.js';
+import { edgeLengths, LETTRES } from './map.js';
 
 export const SEUILS = {
   refVert: 0.05,   // écart surface de référence : vert sous 5 %
@@ -108,8 +109,25 @@ export function checkPreuves(facade) {
   };
 }
 
+// Largeur mesurée au laser comparée à la longueur du côté vu du dessus (contour IGN).
+export function checkLongueurIgn(facade, client) {
+  const contour = client.ign?.contour;
+  if (facade.ignCote == null || !contour?.length || client.ignIncorrect) return null;
+  const len = edgeLengths(contour)[facade.ignCote];
+  const mur = mainMur(facade);
+  const largeur = mur ? rectDims(facade, mur).largeur : null;
+  if (!len || !largeur) return null;
+  const ecart = (largeur - len) / len, a = Math.abs(ecart);
+  const niveau = a <= 0.1 ? 'vert' : a <= 0.2 ? 'orange' : 'rouge';
+  const msg = niveau === 'vert' ? t('c_len_ok') : niveau === 'orange' ? t('c_len_warn') : t('c_len_bad');
+  return {
+    id: 'longueur', niveau, titre: t('c_len'),
+    message: `${t('c_len_msg', LETTRES[facade.ignCote], f(len), f(largeur), ecart > 0 ? '+' : '−', f(a * 100, 1))} ${msg}`,
+  };
+}
+
 export function allChecks(facade, client, facadesClient) {
-  return [checkHauteur(facade, client), checkReference(client, facadesClient), checkPlausible(facade), checkPreuves(facade)].filter(Boolean);
+  return [checkHauteur(facade, client), checkLongueurIgn(facade, client), checkReference(client, facadesClient), checkPlausible(facade), checkPreuves(facade)].filter(Boolean);
 }
 
 export function pire(checks) {

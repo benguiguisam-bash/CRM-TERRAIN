@@ -1,8 +1,8 @@
 // Données gratuites de l'IGN (Géoplateforme) : adresse -> bâtiment BD TOPO.
+import { t } from './i18n.js';
+
 const GEOCODE = 'https://data.geopf.fr/geocodage/search';
 const WFS = 'https://data.geopf.fr/wfs/ows';
-
-import { t } from './i18n.js';
 
 // Codes "matériaux des murs" (fichiers fonciers) : un chiffre par matériau.
 // Le code est gardé tel quel et traduit à l'affichage, dans la langue choisie.
@@ -39,43 +39,103 @@ function polygons(geom) {
   return [];
 }
 
-function centroidDist(geom, lon, lat) {
-  let best = Infinity;
-  for (const poly of polygons(geom)) {
-    for (const [x, y] of poly[0]) best = Math.min(best, Math.hypot(x - lon, y - lat));
+// Mètres locaux autour d'un point (suffisant à l'échelle d'une maison).
+function toMeters(lon, lat, lat0) {
+  return [lon * 111320 * Math.cos((lat0 * Math.PI) / 180), lat * 110540];
+}
+
+function ringArea(ring, lat0) {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = toMeters(...ring[i], lat0), [x2, y2] = toMeters(...ring[(i + 1) % ring.length], lat0);
+    a += x1 * y2 - x2 * y1;
   }
-  return best;
+  return Math.abs(a) / 2;
+}
+
+// Simplifie le contour (Douglas-Peucker, en mètres) pour garder les vrais murs.
+function simplify(ring, lat0, tol = 0.35) {
+  if (ring.length < 4) return ring;
+  const m = ring.map(p => toMeters(p[0], p[1], lat0));
+  const keep = new Array(ring.length).fill(false);
+  keep[0] = keep[ring.length - 1] = true;
+  // Contour fermé (début = fin) : on le coupe au point le plus éloigné du départ.
+  let far = 1, fd = 0;
+  for (let i = 1; i < ring.length - 1; i++) {
+    const d = Math.hypot(m[i][0] - m[0][0], m[i][1] - m[0][1]);
+    if (d > fd) { fd = d; far = i; }
+  }
+  keep[far] = true;
+  const stack = [[0, far], [far, ring.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    let best = -1, bd = 0;
+    for (let i = a + 1; i < b; i++) {
+      const [x, y] = m[i], [x1, y1] = m[a], [x2, y2] = m[b];
+      const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy) || 1;
+      const d = Math.abs(dy * x - dx * y + x2 * y1 - y2 * x1) / l;
+      if (d > bd) { bd = d; best = i; }
+    }
+    if (best > 0 && bd > tol) { keep[best] = true; stack.push([a, best], [best, b]); }
+  }
+  return ring.filter((_, i) => keep[i]);
+}
+
+function parseBatiment(f, lat0) {
+  const polys = polygons(f.geometry);
+  if (!polys.length) return null;
+  const outer = polys.map(p => p[0].map(c => [c[0], c[1]])).reduce((a, b) => (ringArea(a, lat0) >= ringArea(b, lat0) ? a : b));
+  let ring = outer.slice();
+  if (ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]) ring.pop();
+  const closed = [...ring, ring[0]];
+  ring = simplify(closed, lat0);
+  ring.pop();
+  const p = f.properties;
+  return {
+    contour: ring.map(([x, y]) => [Math.round(x * 1e7) / 1e7, Math.round(y * 1e7) / 1e7]),
+    hauteur: p.hauteur ?? null,
+    faitage: p.altitude_maximale_toit != null && p.altitude_minimale_sol != null ? p.altitude_maximale_toit - p.altitude_minimale_sol : null,
+    niveaux: p.nombre_d_etages ?? null,
+    materiauxCode: p.materiaux_des_murs ?? null,
+    usage: p.usage_1 ?? null,
+    surfaceSol: Math.round(ringArea(outer, lat0)),
+    _outer: outer,
+  };
 }
 
 export async function fetchBatiment(adresse) {
   const pos = await geocode(adresse);
-  const d = 0.0004; // ~40 m autour de l'adresse
+  const d = 0.0005; // ~50 m autour de l'adresse
   const bbox = `${pos.lat - d},${pos.lon - d},${pos.lat + d},${pos.lon + d},urn:ogc:def:crs:EPSG::4326`;
-  const url = `${WFS}?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:batiment&OUTPUTFORMAT=application/json&COUNT=50&BBOX=${bbox}`;
+  const url = `${WFS}?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:batiment&OUTPUTFORMAT=application/json&COUNT=80&BBOX=${bbox}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(t('err_ign_service'));
   const data = await r.json();
-  const feats = data.features || [];
-  if (!feats.length) return { ...pos, trouve: false };
+  const bats = (data.features || []).map(f => parseBatiment(f, pos.lat)).filter(Boolean);
+  if (!bats.length) return { ...pos, trouve: false, candidats: [] };
 
-  let choisi = feats.find(f => polygons(f.geometry).some(p => pointInRing(pos.lon, pos.lat, p[0])));
-  let certitude = 'sur';
-  if (!choisi) {
-    choisi = feats.reduce((a, b) => (centroidDist(a.geometry, pos.lon, pos.lat) < centroidDist(b.geometry, pos.lon, pos.lat) ? a : b));
-    certitude = 'proche';
-  }
-  const p = choisi.properties;
-  const faitage = p.altitude_maximale_toit != null && p.altitude_minimale_sol != null
-    ? p.altitude_maximale_toit - p.altitude_minimale_sol : null;
+  const [px, py] = toMeters(pos.lon, pos.lat, pos.lat);
+  bats.forEach(b => {
+    b.inside = pointInRing(pos.lon, pos.lat, b._outer);
+    b.dist = b.inside ? 0 : Math.min(...b._outer.map(c => { const [x, y] = toMeters(c[0], c[1], pos.lat); return Math.hypot(x - px, y - py); }));
+  });
+  bats.sort((a, b) => a.dist - b.dist);
+  // Les petites annexes (garage, abri) passent après la maison la plus proche.
+  const choisi = bats.find(b => b.inside) || bats.find(b => b.surfaceSol >= 40 && b.dist < 25) || bats[0];
+  const clean = b => { const { _outer, inside, dist, ...rest } = b; return rest; };
   return {
     ...pos,
     trouve: true,
-    certitude,
-    hauteur: p.hauteur ?? null,
-    faitage,
-    niveaux: p.nombre_d_etages ?? null,
-    materiauxCode: p.materiaux_des_murs ?? null,
-    usage: p.usage_1 ?? null,
+    certitude: choisi.inside ? 'sur' : 'proche',
+    ...clean(choisi),
+    candidats: bats.slice(0, 15).map(clean),
     fetchedAt: new Date().toISOString(),
   };
+}
+
+// Change le bâtiment retenu parmi les candidats (si l'IGN a pris le voisin).
+export function choisirBatiment(ign, index) {
+  const b = ign.candidats?.[index];
+  if (!b) return ign;
+  return { ...ign, ...b, certitude: 'choisi' };
 }

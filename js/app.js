@@ -1,7 +1,8 @@
 import { clients as dbC, facades as dbF, uid } from './db.js';
 import { totals, missingCount, fmt, parseNum } from './geometry.js';
 import { allChecks, pire, checkReference, niveauxLabel } from './checks.js';
-import { fetchBatiment, decodeMateriaux } from './ign.js';
+import { fetchBatiment, decodeMateriaux, choisirBatiment } from './ign.js';
+import { mapSvg } from './map.js';
 import { compress, blobUrl, pickPhoto } from './images.js';
 import { thumbSvg, esc, shapesSvg } from './overlay.js';
 import { renderEditor } from './editor.js';
@@ -305,6 +306,13 @@ async function viewClient(id) {
 
     ${ref ? `<div class="check ${ref.niveau}"><span class="dot ${ref.niveau}"></span><div class="col"><strong>${esc(ref.titre)}</strong><span>${esc(ref.message)}</span></div></div>` : ''}
 
+    ${ign?.trouve && ign.contour?.length >= 3 ? `
+    <div class="section-label mono">${esc(t('plan_section'))}</div>
+    <a class="plan-preview" href="#/client/${c.id}/plan">
+      ${mapSvg(ign, { widthPx: 358, aspect: 358 / 190, assign: assignMap(fs) }).svg}
+      <span class="plan-badge">${esc(t('plan_placed', { a: fs.filter(f => f.ignCote != null).length, t: fs.length }))}</span>
+    </a>` : ''}
+
     <div class="section-label mono">${esc(t('facades_label'))}</div>
     <div class="thumbs">
       ${fs.map(f => {
@@ -354,6 +362,166 @@ async function viewClient(id) {
     ignTried.add(id);
     refreshIgn(c, { silent: true }).then(() => { if (location.hash === `#/client/${id}`) viewClient(id); });
   }
+}
+
+// ---------- écran : vue du dessus (photo aérienne IGN) ----------
+function assignMap(fs) {
+  const out = {};
+  fs.forEach(f => { if (f.ignCote != null) out[f.ignCote] = { url: blobUrl(f.photo), nom: f.nom }; });
+  return out;
+}
+
+function segDist(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy || 1;
+  const k = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2));
+  return Math.hypot(px - (a[0] + k * dx), py - (a[1] + k * dy));
+}
+
+const plan = { clientId: null, sel: null, pick: false };
+
+async function viewPlan(id) {
+  const c = await dbC.get(id);
+  if (!c) return go('#/');
+  const fs = (await dbF.byClient(id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (plan.clientId !== id) Object.assign(plan, { clientId: id, sel: null, pick: false });
+  const ign = c.ign;
+  const hasContour = ign?.trouve && ign.contour?.length >= 3;
+  const selF = fs.find(f => f.id === plan.sel);
+
+  app.innerHTML = `
+  <div class="screen">
+    <header class="bar">
+      <a class="round" href="#/client/${c.id}" aria-label="${esc(t('back'))}">${ICON.back}</a>
+      <div class="col center"><span class="bar-title">${esc(t('plan_title'))}</span><span class="mono tiny muted">${esc(c.nom.toUpperCase())}</span></div>
+      <span class="round ghost"></span>
+    </header>
+    <div class="plan-map" id="pm">${hasContour ? '' : `<div class="plan-empty"><p>${esc(t('plan_no_contour'))}</p><button class="btn glass" id="ignrefresh">${ICON.refresh}${esc(t('ign_refresh'))}</button></div>`}</div>
+    <p class="plan-hint ${plan.pick ? 'violet' : ''}" id="ph">${esc(plan.pick ? t('plan_pick_house') : selF ? t('plan_hint_selected', selF.nom) : fs.length ? t('plan_hint') : t('plan_no_facades'))}</p>
+    <div class="plan-tray">
+      ${fs.map(f => `<button class="plan-thumb ${plan.sel === f.id ? 'on' : ''} ${f.ignCote != null ? 'placed' : ''}" data-fid="${f.id}" aria-pressed="${plan.sel === f.id}">
+          <img src="${blobUrl(f.photo)}" alt="" draggable="false">
+          <span class="badge-letter">${f.ignCote != null ? (String.fromCharCode(65 + f.ignCote)) : '?'}</span>
+          <span class="thumb-name ellipsis">${esc(f.nom)}</span>
+        </button>`).join('')}
+    </div>
+    <div class="plan-actions">
+      ${selF && selF.ignCote != null ? `<button class="btn glass" id="unplace">${esc(t('plan_remove'))}</button>` : ''}
+      ${hasContour && ign.candidats?.length > 1 ? `<button class="link small" id="pick">${esc(plan.pick ? t('plan_cancel_pick') : t('plan_wrong_house'))}</button>` : ''}
+    </div>
+  </div>`;
+
+  const rerender = () => viewPlan(id);
+  const rf = app.querySelector('#ignrefresh');
+  if (rf) rf.onclick = async () => { rf.disabled = true; await refreshIgn(c); rerender(); };
+  const pickBtn = app.querySelector('#pick');
+  if (pickBtn) pickBtn.onclick = () => { plan.pick = !plan.pick; plan.sel = null; rerender(); };
+  const un = app.querySelector('#unplace');
+  if (un) un.onclick = async () => { selF.ignCote = null; await dbF.put(selF); plan.sel = null; rerender(); };
+
+  const assignTo = async (fid, edge) => {
+    for (const f of fs) {
+      if (f.id === fid) f.ignCote = edge;
+      else if (f.ignCote === edge) f.ignCote = null;
+      else continue;
+      await dbF.put(f);
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
+    plan.sel = null;
+    rerender();
+  };
+
+  // Photos du bas : on touche pour choisir, ou on fait glisser sur un côté.
+  let res = null;
+  const pm = app.querySelector('#pm');
+  const edgeAt = (x, y) => {
+    const svg = pm.querySelector('svg');
+    if (!svg || !res) return null;
+    const r = pm.getBoundingClientRect();
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+    const m = svg.getScreenCTM();
+    const pt = svg.createSVGPoint(); pt.x = x; pt.y = y;
+    const p = pt.matrixTransform(m.inverse());
+    let best = null, bd = 40 / m.a;
+    res.pts.forEach((a, i) => { const d = segDist(p.x, p.y, a, res.pts[(i + 1) % res.pts.length]); if (d < bd) { bd = d; best = i; } });
+    return best;
+  };
+  const highlight = edge => {
+    const svg = pm.querySelector('svg');
+    if (!svg) return;
+    let hl = svg.querySelector('#hl');
+    if (edge == null) { hl?.remove(); return; }
+    const a = res.pts[edge], b = res.pts[(edge + 1) % res.pts.length];
+    if (!hl) { hl = document.createElementNS('http://www.w3.org/2000/svg', 'line'); hl.id = 'hl'; svg.appendChild(hl); }
+    const k = 1 / svg.getScreenCTM().a;
+    Object.entries({ x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: '#22D3EE', 'stroke-width': 9 * k, 'stroke-linecap': 'round' }).forEach(([n, v]) => hl.setAttribute(n, v));
+  };
+
+  app.querySelectorAll('[data-fid]').forEach(btn => {
+    btn.addEventListener('pointerdown', e => {
+      if (plan.pick) return;
+      e.preventDefault();
+      const fid = btn.dataset.fid;
+      const start = { x: e.clientX, y: e.clientY };
+      let ghost = null, over = null;
+      const move = ev => {
+        if (!ghost && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 8) {
+          ghost = document.createElement('div');
+          ghost.className = 'drag-ghost';
+          ghost.innerHTML = `<img src="${btn.querySelector('img').src}" alt="">`;
+          document.body.appendChild(ghost);
+        }
+        if (ghost) {
+          ghost.style.transform = `translate(${ev.clientX - 36}px, ${ev.clientY - 80}px)`;
+          const o = edgeAt(ev.clientX, ev.clientY - 44);
+          if (o !== over) { over = o; highlight(over); }
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        if (ghost) {
+          ghost.remove();
+          if (over != null) assignTo(fid, over); else highlight(null);
+        } else {
+          plan.sel = plan.sel === fid ? null : fid;
+          rerender();
+        }
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+  });
+
+  if (!hasContour) return;
+  // Carte dessinée après coup : il faut sa taille réelle à l'écran.
+  const w = pm.clientWidth, h = pm.clientHeight;
+  res = mapSvg(ign, {
+    widthPx: w, aspect: w / h, assign: assignMap(fs), interactive: true,
+    selected: selF?.ignCote ?? null, candidats: plan.pick,
+  });
+  pm.innerHTML = res.svg;
+  const svg = pm.querySelector('svg');
+  svg.addEventListener('click', async e => {
+    const cand = e.target.closest('[data-cand]');
+    if (plan.pick && cand) {
+      c.ign = choisirBatiment(c.ign, Number(cand.dataset.cand));
+      for (const f of fs) if (f.ignCote != null) { f.ignCote = null; await dbF.put(f); }
+      await dbC.put(c);
+      plan.pick = false;
+      toast(t('plan_house_changed'));
+      return rerender();
+    }
+    if (plan.pick) return;
+    const edgeEl = e.target.closest('[data-edge]');
+    const edge = edgeEl ? Number(edgeEl.dataset.edge) : edgeAt(e.clientX, e.clientY);
+    if (edge == null) return;
+    if (plan.sel) return assignTo(plan.sel, edge);
+    const owner = fs.find(f => f.ignCote === edge);
+    if (owner) { plan.sel = owner.id; rerender(); } else toast(t('plan_tap_photo_first'));
+  });
 }
 
 // ---------- écran : résultat ----------
@@ -467,6 +635,7 @@ export async function route() {
     if (!parts.length) return await viewTournee();
     if (parts[0] === 'client' && parts[1] === 'nouveau') return await viewClientForm(null);
     if (parts[0] === 'client' && parts[2] === 'modifier') return await viewClientForm(parts[1]);
+    if (parts[0] === 'client' && parts[2] === 'plan') return await viewPlan(parts[1]);
     if (parts[0] === 'client') return await viewClient(parts[1]);
     if (parts[0] === 'facade' && parts[2] === 'resultat') return await viewResultat(parts[1]);
     if (parts[0] === 'facade') return await renderEditor(app, parts[1], { go, toast });
