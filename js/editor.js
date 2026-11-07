@@ -19,12 +19,15 @@ const HINTS = {
   ouverture: n => `Touche les 4 coins de la fenêtre ou de la porte (${n}/4).`,
 };
 
-// Réglette façon molette : on la fait glisser pour ajuster la valeur au centimètre,
+// Réglette façon molette : on la fait glisser pour ajuster la valeur par pas de 10 cm,
 // avec de l'élan quand on la lance. La saisie au clavier la repositionne.
+const STEP = 0.1; // un trait = 10 cm
+const snap = v => Math.round(v / STEP) * STEP;
+
 function setupRuler(el, input, initial) {
   const cv = el.querySelector('canvas');
   const ctx = cv.getContext('2d');
-  const PX = 12; // pixels par centimètre
+  const PX = 16; // pixels par trait (10 cm)
   let val = parseNum(input.value) ?? initial ?? 0;
   let raf = 0, drag = null, alive = true;
 
@@ -36,12 +39,12 @@ function setupRuler(el, input, initial) {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const center = val * 100, span = Math.ceil(w / 2 / PX) + 2;
+    const center = val / STEP, span = Math.ceil(w / 2 / PX) + 2;
     for (let i = -span; i <= span; i++) {
-      const cm = Math.round(center) + i;
-      if (cm < 0) continue;
-      const x = w / 2 + (cm - center) * PX;
-      const major = cm % 10 === 0, mid = cm % 5 === 0;
+      const t = Math.round(center) + i; // index du trait (1 trait = 10 cm)
+      if (t < 0) continue;
+      const x = w / 2 + (t - center) * PX;
+      const major = t % 10 === 0, mid = t % 5 === 0;
       const len = major ? h * 0.5 : mid ? h * 0.34 : h * 0.22;
       ctx.strokeStyle = major ? 'rgba(165,243,252,0.95)' : 'rgba(34,211,238,0.5)';
       ctx.lineWidth = major ? 2 : 1;
@@ -50,18 +53,18 @@ function setupRuler(el, input, initial) {
         ctx.fillStyle = '#A5F3FC';
         ctx.font = '700 11px "JetBrains Mono", ui-monospace, monospace';
         ctx.textAlign = 'center';
-        ctx.fillText((cm / 100).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }), x, 12);
+        ctx.fillText(`${t / 10} m`, x, 12);
       }
     }
     el.setAttribute('aria-valuenow', val.toFixed(2));
   }
 
   function setVal(v, fromInput = false) {
-    const before = Math.round(val * 100);
+    const before = Math.round(val / STEP);
     val = Math.max(0, Math.min(100, v));
     if (!fromInput) {
-      input.value = fmt(Math.round(val * 100) / 100);
-      if (Math.round(val * 100) !== before && navigator.vibrate) navigator.vibrate(4);
+      input.value = fmt(snap(val));
+      if (Math.round(val / STEP) !== before && navigator.vibrate) navigator.vibrate(6);
     }
     draw();
   }
@@ -77,7 +80,7 @@ function setupRuler(el, input, initial) {
     const now = performance.now(), dt = Math.max(1, now - drag.lastT);
     drag.v = (e.clientX - drag.lastX) / dt;
     drag.lastX = e.clientX; drag.lastT = now;
-    setVal(drag.start - (e.clientX - drag.x) / PX / 100);
+    setVal(drag.start - ((e.clientX - drag.x) / PX) * STEP);
   });
   const release = () => {
     if (!drag) return;
@@ -90,8 +93,8 @@ function setupRuler(el, input, initial) {
     const step = now => {
       const dt = now - last; last = now;
       v *= Math.pow(0.88, dt / 16);
-      if (Math.abs(v) < 0.02 || !alive) { setVal(Math.round(val * 100) / 100); return; }
-      setVal(val - (v * dt) / PX / 100);
+      if (Math.abs(v) < 0.02 || !alive) { setVal(snap(val)); return; }
+      setVal(val - ((v * dt) / PX) * STEP);
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
@@ -99,8 +102,8 @@ function setupRuler(el, input, initial) {
   el.addEventListener('pointerup', release);
   el.addEventListener('pointercancel', release);
   el.addEventListener('keydown', e => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); setVal(val + 0.01); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); setVal(val - 0.01); }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); setVal(snap(val) + STEP); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); setVal(snap(val) - STEP); }
   });
   input.addEventListener('input', () => { const v = parseNum(input.value); if (v != null) setVal(v, true); });
 
@@ -408,8 +411,8 @@ export async function renderEditor(root, id, { go, toast }) {
         <div class="readout">
           <label for="val" class="mono tiny tracking">MÉTRAGE LASER</label>
           <span class="row"><input id="val" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${cur ? fmt(cur.valeur) : ''}"><span class="unit">m</span></span>
-          <div class="ruler" id="ruler" role="slider" aria-label="Réglette : fais glisser pour ajuster au centimètre" tabindex="0"><canvas></canvas><span class="needle"></span></div>
-          <span class="mono tiny muted ruler-hint">Fais glisser la réglette : 1 trait = 1 cm</span>
+          <div class="ruler" id="ruler" role="slider" aria-label="Réglette : fais glisser pour ajuster par pas de 10 cm" tabindex="0"><canvas></canvas><span class="needle"></span></div>
+          <span class="mono tiny muted ruler-hint">Fais glisser la réglette : 1 trait = 10 cm</span>
         </div>
         <p class="error" id="serr" hidden></p>
         <div class="proof" id="proof"></div>
