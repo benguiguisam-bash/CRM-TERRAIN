@@ -120,6 +120,7 @@ button { cursor: pointer; }
 .btn.sm { min-height: 40px; font-size: 13px; padding: 0 12px; }
 .btn.full { width: 100%; }
 .btn.disabled { opacity: .5; }
+.btn.link-btn { background: transparent; color: var(--muted2); }
 .link { background: none; border: 0; color: var(--cyan); display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; align-self: flex-start; min-height: 44px; }
 .bottom { padding: 0 16px; }
 
