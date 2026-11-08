@@ -1,5 +1,5 @@
 import { clients as dbC, facades as dbF, uid } from './db.js';
-import { totals, missingCount, fmt, parseNum } from './geometry.js';
+import { totals, missingCount, fmt, parseNum, shapeLabel, isDeduction } from './geometry.js';
 import { allChecks, pire, checkReference, niveauxLabel } from './checks.js';
 import { fetchBatiment, decodeMateriaux, choisirBatiment, suggestAdresses } from './ign.js';
 import { mapSvg } from './map.js';
@@ -586,7 +586,6 @@ async function viewResultat(id) {
   const ratio = tt.brut ? tt.net / tt.brut : 0;
   const circ = 2 * Math.PI * 44;
   const label = t('lvl_' + niveau);
-  const typeLabel = { mur: t('type_mur'), pignon: t('type_pignon'), ouverture: t('type_ouverture') };
   const k = f.photoW / 358;
 
   let barres = '';
@@ -630,7 +629,7 @@ async function viewResultat(id) {
 
     <section class="panel">
       <span class="mono tiny muted tracking">${esc(t('calc_detail'))}</span>
-      ${tt.lignes.map(l => `<div class="line"><span>${esc(typeLabel[l.shape.type])}${l.largeur ? ` · ${fmt(l.largeur)} × ${fmt(l.hauteur)}` : l.base ? ` · ${esc(t('base_slopes', fmt(l.base), fmt(l.pentes[0]), fmt(l.pentes[1])))}` : ''}</span><span class="mono strong ${l.shape.type === 'ouverture' ? 'neg' : ''}">${l.shape.type === 'ouverture' ? '− ' : ''}${fmt(l.aire)} m²</span></div>`).join('')}
+      ${tt.lignes.map(l => `<div class="line"><span>${esc(shapeLabel(l.shape))}${l.largeur ? ` · ${fmt(l.largeur)} × ${fmt(l.hauteur)}` : l.base ? ` · ${esc(t('base_slopes', fmt(l.base), fmt(l.pentes[0]), fmt(l.pentes[1])))}` : l.cotes ? ` · ${esc(t('poly_sides', l.cotes.length))}` : ''}</span><span class="mono strong ${isDeduction(l.shape) ? 'neg' : ''}">${isDeduction(l.shape) ? '− ' : ''}${fmt(l.aire)} m²</span></div>`).join('')}
       <div class="sep"></div>
       <div class="line"><span>${esc(t('gross_area'))}</span><span class="mono strong">${fmt(tt.brut)} m²</span></div>
       <div class="line"><span>${esc(t('openings_deducted'))}</span><span class="mono strong neg">− ${fmt(tt.ouvertures)} m²</span></div>

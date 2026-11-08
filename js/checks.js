@@ -1,6 +1,6 @@
 // Contrôles de cohérence : "faisceau d'indices". Le laser fait foi,
 // les autres sources servent à repérer les erreurs.
-import { mainMur, rectDims, photoHeightEstimate, totals, edgeValues, SHAPES } from './geometry.js';
+import { mainMur, rectDims, photoHeightEstimate, totals, edgeValues, shapeLabel, edgeName } from './geometry.js';
 import { t, numLocale } from './i18n.js';
 import { edgeLengths, LETTRES } from './map.js';
 
@@ -79,8 +79,8 @@ export function checkPlausible(facade) {
     const e = edgeValues(facade, s);
     e.forEach((x, i) => {
       if (x.v == null) return;
-      if (x.v > 40) alertes.push(t('c_plaus_big', SHAPES[s.type].label, SHAPES[s.type].edges[i], f(x.v)));
-      if (x.v < 0.2) alertes.push(t('c_plaus_small', SHAPES[s.type].label, SHAPES[s.type].edges[i], f(x.v)));
+      if (x.v > 40) alertes.push(t('c_plaus_big', shapeLabel(s), edgeName(s, i), f(x.v)));
+      if (x.v < 0.2) alertes.push(t('c_plaus_small', shapeLabel(s), edgeName(s, i), f(x.v)));
     });
   }
   const tt = totals(facade);

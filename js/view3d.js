@@ -23,7 +23,7 @@ async function loadImage(src, cors = false) {
 // Découpe la photo autour du mur (et du pignon si demandé) pour la plaquer sur le mur 3D.
 async function photoCanvas(facade, withPignon) {
   const bmp = await createImageBitmap(facade.photo);
-  const shapes = facade.shapes.filter(s => s.type === 'mur' || (withPignon && s.type === 'pignon'));
+  const shapes = facade.shapes.filter(s => s.type === 'mur' || (s.type === 'poly' && s.role !== 'ouverture') || (withPignon && s.type === 'pignon'));
   let x0 = 0, y0 = 0, x1 = facade.photoW, y1 = facade.photoH;
   if (shapes.length) {
     const ps = shapes.flatMap(s => s.points);

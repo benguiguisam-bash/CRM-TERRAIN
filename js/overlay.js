@@ -1,5 +1,5 @@
 // Dessin des formes (SVG) par-dessus la photo : partagé par l'éditeur et les vignettes.
-import { SHAPES, edgePoints, edgeValues, fmt } from './geometry.js';
+import { SHAPES, edgePoints, edgeValues, fmt, isDeduction } from './geometry.js';
 import { t } from './i18n.js';
 
 export const COLORS = {
@@ -18,7 +18,7 @@ export function shapesSvg(facade, k, { labels = true, selected = null } = {}) {
   let out = '';
   for (const s of facade.shapes) {
     const pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
-    if (s.type === 'ouverture') {
+    if (isDeduction(s)) {
       out += `<polygon points="${pts}" fill="rgba(226,232,240,0.12)" stroke="#E2E8F0" stroke-width="${1.6 * k}" stroke-dasharray="${5 * k} ${4 * k}"/>`;
     } else {
       out += `<polygon points="${pts}" fill="rgba(34,211,238,0.10)"/>`;
@@ -29,7 +29,7 @@ export function shapesSvg(facade, k, { labels = true, selected = null } = {}) {
       const isSel = selected && selected.shapeId === s.id && selected.edge === i;
       const color = isSel ? COLORS.cyan : COLORS[v.etat];
       const dash = v.etat === 'manquant' ? `stroke-dasharray="${10 * k} ${7 * k}"` : v.etat === 'lie' ? `stroke-dasharray="${3 * k} ${4 * k}"` : '';
-      const w = (isSel ? 6 : s.type === 'ouverture' ? 2.5 : 3.5) * k;
+      const w = (isSel ? 6 : isDeduction(s) ? 2.5 : 3.5) * k;
       if (s.type === 'ouverture' && v.etat === 'lie' && !isSel) return;
       out += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${color}" stroke-width="${w}" stroke-linecap="round" ${dash} class="edge"/>`;
     });
@@ -54,14 +54,14 @@ export function shapesSvg(facade, k, { labels = true, selected = null } = {}) {
         if (s.type === 'pignon' && i === 1 && v.etat === 'manquant' && facade.symetrique?.[s.id] !== false) return;
         const [a, b] = edgePoints(s, i);
         const txt = v.etat === 'mesure' ? `${fmt(v.v)} m` : t('plus_cote');
-        const fs = (s.type === 'ouverture' ? 11 : 13) * k;
+        const fs = (isDeduction(s) ? 11 : 13) * k;
         const wbox = (txt.length * 0.62 * fs) + 16 * k;
         const hbox = fs + 12 * k;
         // Étiquette décalée vers l'extérieur (vers l'intérieur pour une ouverture)
         // pour ne pas se superposer aux formes voisines.
         let mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         const dx = mx - cx, dy = my - cy, dl = Math.hypot(dx, dy) || 1;
-        const dir = s.type === 'ouverture' ? -1 : 1;
+        const dir = isDeduction(s) ? -1 : 1;
         const off = (Math.abs(dx / dl) * wbox + Math.abs(dy / dl) * hbox) / 2 + 4 * k;
         mx += dir * (dx / dl) * off;
         my += dir * (dy / dl) * off;

@@ -1,5 +1,6 @@
 // Formes dessinées sur la photo et calcul des surfaces à partir des cotes laser.
-// Les surfaces viennent UNIQUEMENT des métrages saisis : la photo sert de croquis.
+// Les surfaces viennent des métrages saisis : la photo sert de croquis
+// (pour une forme libre, elle donne seulement la direction de chaque côté).
 
 import { t, numLocale } from './i18n.js';
 
@@ -16,7 +17,23 @@ export const SHAPES = {
   mur: shapeDef('shape_mur', 4, ['e_top', 'e_right', 'e_bottom', 'e_left']),
   pignon: shapeDef('shape_pignon', 3, ['e_slope_l', 'e_slope_r', 'e_base']),
   ouverture: shapeDef('shape_ouverture', 4, ['e_width', 'e_height', 'e_width_b', 'e_height_l']),
+  // Forme libre (3, 5, 6… points) : role 'mur' (surface) ou 'ouverture' (à déduire).
+  poly: shapeDef('shape_poly', null, []),
 };
+
+export function isDeduction(shape) {
+  return shape.type === 'ouverture' || (shape.type === 'poly' && shape.role === 'ouverture');
+}
+
+export function shapeLabel(shape) {
+  if (shape.type === 'poly') return shape.role === 'ouverture' ? t('shape_ouverture') : t('shape_poly');
+  return SHAPES[shape.type].label;
+}
+
+export function edgeName(shape, i) {
+  if (shape.type === 'poly') return `${t('e_side')} ${i + 1}`;
+  return SHAPES[shape.type].edges[i];
+}
 
 // Remet les points dans un ordre fixe, quel que soit l'ordre des touches.
 // Mur / ouverture : haut-gauche, haut-droite, bas-droite, bas-gauche.
@@ -32,6 +49,19 @@ export function normalize(type, pts) {
   const [tl, tr] = byY.slice(0, 2).sort((a, b) => a.x - b.x);
   const [bl, br] = byY.slice(2).sort((a, b) => a.x - b.x);
   return [tl, tr, br, bl];
+}
+
+// 4 points qui forment à peu près un rectangle (angles proches de 90°, perspective comprise) ?
+export function isRectLike(pts) {
+  if (pts.length !== 4) return false;
+  const n = normalize('mur', pts);
+  for (let i = 0; i < 4; i++) {
+    const a = n[(i + 3) % 4], b = n[i], c = n[(i + 1) % 4];
+    const v1 = { x: a.x - b.x, y: a.y - b.y }, v2 = { x: c.x - b.x, y: c.y - b.y };
+    const cos = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y) || 1);
+    if (Math.abs(Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI - 90) > 20) return false;
+  }
+  return true;
 }
 
 export function edgePoints(shape, i) {
@@ -68,6 +98,12 @@ function pxArea(s) {
 // Pour chaque côté : 'mesure' (cote saisie), 'lie' (déduit d'un autre côté) ou 'manquant'.
 export function edgeValues(facade, shape) {
   const out = [];
+  if (shape.type === 'poly') {
+    return shape.points.map((_, i) => {
+      const v = cote(facade, shape, i);
+      return v != null ? { v, etat: 'mesure' } : { v: null, etat: 'manquant' };
+    });
+  }
   if (shape.type === 'pignon') {
     const pg = cote(facade, shape, 0);
     const pdOwn = cote(facade, shape, 1);
@@ -101,8 +137,60 @@ function rectDims(facade, shape) {
   return { largeur, hauteur };
 }
 
+// Forme libre : on « marche » le long des côtés avec les longueurs laser et la direction
+// de chaque côté sur la photo (redressée à l'horizontale/verticale si elle en est proche),
+// on répartit le petit défaut de fermeture, puis on calcule la surface.
+// Le redressement le plus fort qui « referme » bien la forme est retenu :
+// un mur penché par la perspective est redressé, une vraie pente de toit est gardée.
+function polyArea(shape, lengths) {
+  let best = null;
+  for (const snapDeg of [15, 10, 6, 3, 0]) {
+    const r = polyAreaSnap(shape, lengths, snapDeg);
+    if (r.fermeture < 0.01) return r;
+    if (!best || r.fermeture < best.fermeture - 0.002) best = r;
+  }
+  return best;
+}
+
+function polyAreaSnap(shape, lengths, snapDeg) {
+  const p = shape.points;
+  const n = p.length;
+  const vecs = [];
+  let per = 0;
+  for (let i = 0; i < n; i++) {
+    const a = p[i], b = p[(i + 1) % n];
+    let ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const deg = ang * 180 / Math.PI;
+    const nearest = Math.round(deg / 90) * 90;
+    if (Math.abs(deg - nearest) <= snapDeg) ang = nearest * Math.PI / 180;
+    vecs.push({ x: Math.cos(ang) * lengths[i], y: Math.sin(ang) * lengths[i] });
+    per += lengths[i];
+  }
+  const cx = vecs.reduce((s, v) => s + v.x, 0), cy = vecs.reduce((s, v) => s + v.y, 0);
+  const fermeture = Math.hypot(cx, cy) / (per || 1);
+  let x = 0, y = 0, area = 0;
+  for (let i = 0; i < n; i++) {
+    const k = lengths[i] / (per || 1);
+    const nx = x + vecs[i].x - cx * k, ny = y + vecs[i].y - cy * k;
+    area += x * ny - nx * y;
+    x = nx; y = ny;
+  }
+  return { aire: Math.abs(area) / 2, fermeture };
+}
+
 // Surface d'une forme en m², ou null s'il manque des cotes.
 export function shapeArea(facade, shape) {
+  if (shape.type === 'poly') {
+    const ls = edgeValues(facade, shape).map(e => e.v);
+    if (ls.some(v => v == null)) return { aire: null };
+    if (shape.points.length === 3) {
+      const [a, b, c] = ls, s = (a + b + c) / 2, h2 = s * (s - a) * (s - b) * (s - c);
+      if (h2 <= 0) return { aire: null, erreur: t('tri_error') };
+      return { aire: Math.sqrt(h2), cotes: ls };
+    }
+    const r = polyArea(shape, ls);
+    return { aire: r.aire, cotes: ls, erreur: r.fermeture > 0.05 ? t('poly_close_error') : null };
+  }
   if (shape.type === 'pignon') {
     const [a, b, c] = edgeValues(facade, shape).map(e => e.v);
     if (a == null || b == null || c == null) return { aire: null };
@@ -116,26 +204,41 @@ export function shapeArea(facade, shape) {
   return { aire: largeur * hauteur, largeur, hauteur };
 }
 
-// Cotes réellement nécessaires (une largeur + une hauteur par rectangle, etc.).
-export function requiredStatus(facade) {
-  let total = 0, missing = 0;
+// Liste des cotes réellement nécessaires, dans l'ordre où on les saisit
+// (une largeur + une hauteur par rectangle, chaque côté d'une forme libre, etc.).
+export function requiredEdges(facade) {
+  const out = [];
   const hasMur = facade.shapes.some(s => s.type === 'mur');
   for (const s of facade.shapes) {
     const e = edgeValues(facade, s);
-    if (s.type === 'pignon') {
+    const add = i => out.push({ shapeId: s.id, edge: i, ok: e[i].v != null });
+    if (s.type === 'poly') s.points.forEach((_, i) => add(i));
+    else if (s.type === 'pignon') {
       const sym = facade.symetrique?.[s.id] !== false;
-      total += 1; if (e[0].v == null) missing++;
-      if (!sym || e[1].etat === 'mesure') { total += 1; if (e[1].v == null) missing++; }
-      else if (e[0].v == null) { /* déduite de la pente gauche */ }
-      if (!hasMur || e[2].etat === 'mesure') { total += 1; if (e[2].v == null) missing++; }
-      else if (e[2].v == null) { total += 0; }
+      add(0);
+      if (!sym || e[1].etat === 'mesure') add(1);
+      if (!hasMur || e[2].etat === 'mesure') add(2);
+    } else if (s.type === 'ouverture') {
+      out.push({ shapeId: s.id, edge: e[0].etat === 'mesure' || e[2].etat !== 'mesure' ? 0 : 2, ok: e[0].v != null });
+      out.push({ shapeId: s.id, edge: e[1].etat === 'mesure' || e[3].etat !== 'mesure' ? 1 : 3, ok: e[1].v != null });
     } else {
-      total += 2;
-      if (e[0].v == null) missing++;
-      if (e[1].v == null) missing++;
+      // Mur : on mesure plutôt le bas (au sol) et le côté gauche.
+      out.push({ shapeId: s.id, edge: e[0].etat === 'mesure' ? 0 : 2, ok: e[0].v != null });
+      out.push({ shapeId: s.id, edge: e[1].etat === 'mesure' ? 1 : 3, ok: e[1].v != null });
     }
   }
-  return { total, missing };
+  return out;
+}
+
+export function requiredStatus(facade) {
+  const r = requiredEdges(facade);
+  return { total: r.length, missing: r.filter(x => !x.ok).length };
+}
+
+// Prochaine cote à saisir (d'abord dans la même forme si on en donne une).
+export function nextMissing(facade, shapeId = null) {
+  const r = requiredEdges(facade).filter(x => !x.ok);
+  return (shapeId && r.find(x => x.shapeId === shapeId)) || (shapeId ? null : r[0] || null);
 }
 
 export function missingCount(facade) {
@@ -151,10 +254,10 @@ export function totals(facade) {
     if (r.erreur) erreur = r.erreur;
     if (r.aire == null) { complet = false; continue; }
     lignes.push({ shape: s, ...r });
-    if (s.type === 'ouverture') ouvertures += r.aire;
+    if (isDeduction(s)) ouvertures += r.aire;
     else brut += r.aire;
   }
-  if (!facade.shapes.some(s => s.type !== 'ouverture')) complet = false;
+  if (!facade.shapes.some(s => !isDeduction(s))) complet = false;
   return { brut, ouvertures, net: Math.max(0, brut - ouvertures), complet, lignes, erreur };
 }
 

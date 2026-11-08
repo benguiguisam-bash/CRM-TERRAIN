@@ -1,7 +1,7 @@
 // Éditeur : le commercial trace la façade au doigt sur SA photo,
 // puis touche chaque côté pour saisir le métrage laser + la photo de preuve.
 import { facades as dbF, clients as dbC, uid } from './db.js';
-import { SHAPES, normalize, edgePoints, edgeValues, totals, requiredStatus, fmt, parseNum } from './geometry.js';
+import { SHAPES, normalize, edgePoints, edgeValues, totals, requiredStatus, fmt, parseNum, isRectLike, nextMissing, shapeLabel, edgeName, isDeduction } from './geometry.js';
 import { shapesSvg, verticesSvg, esc } from './overlay.js';
 import { blobUrl, compress, pickPhoto } from './images.js';
 import { t } from './i18n.js';
@@ -191,7 +191,7 @@ export async function renderEditor(root, id, { go, toast }) {
 
   function insideOuverture(p) {
     for (const s of [...f.shapes].reverse()) {
-      if (s.type !== 'ouverture') continue;
+      if (!isDeduction(s)) continue;
       let inside = false;
       const q = s.points;
       for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
@@ -223,7 +223,7 @@ export async function renderEditor(root, id, { go, toast }) {
       for (let i = 0; i < s.points.length; i++) {
         const [a, b] = edgePoints(s, i);
         // Les ouvertures sont petites : on les favorise légèrement.
-        const d = segDist(p, a, b) * (s.type === 'ouverture' ? 0.8 : 1);
+        const d = segDist(p, a, b) * (isDeduction(s) ? 0.8 : 1);
         if (d < bd) { bd = d; best = { shapeId: s.id, edge: i }; }
       }
     }
@@ -239,6 +239,11 @@ export async function renderEditor(root, id, { go, toast }) {
     if (st.drag?.kind === 'new') pts.push(snap(st.drag.p));
     if (pts.length) {
       tmp += `<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="#FBBF24" stroke-width="${3 * k}" stroke-dasharray="${8 * k} ${6 * k}"/>`;
+      if (pts.length >= 3 && st.tool !== 'pignon') {
+        const a = pts[pts.length - 1], b = pts[0];
+        tmp += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#FBBF24" stroke-width="${2 * k}" stroke-dasharray="${3 * k} ${6 * k}" opacity="0.7"/>`;
+        tmp += `<circle cx="${b.x}" cy="${b.y}" r="${16 * k}" fill="none" stroke="#FBBF24" stroke-width="${2 * k}" opacity="0.8"/>`;
+      }
       pts.forEach((p, i) => {
         tmp += `<circle cx="${p.x}" cy="${p.y}" r="${8 * k}" fill="#FBBF24" stroke="#05070D" stroke-width="${2 * k}"/>` +
           `<text x="${p.x}" y="${p.y + 4 * k}" text-anchor="middle" font-size="${10 * k}" font-weight="700" font-family="JetBrains Mono, monospace" fill="#05070D">${i + 1}</text>`;
@@ -260,11 +265,19 @@ export async function renderEditor(root, id, { go, toast }) {
     const prog = root.querySelector('#prog');
     prog.innerHTML = f.shapes.length
       ? `<span class="mono small ${miss ? 'amber' : 'lime'}">${esc(miss ? t('missing_sides', miss) : t('all_cotes'))}</span>
-         <span class="bar-track"><span style="width:${nbEdges ? Math.round(((nbEdges - miss) / nbEdges) * 100) : 0}%"></span></span>`
+         <span class="bar-track"><span style="width:${nbEdges ? Math.round(((nbEdges - miss) / nbEdges) * 100) : 0}%"></span></span>
+         ${miss && !st.temp.length ? `<button class="btn sm next-cote" id="nextcote">${esc(t('next_cote'))}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>` : ''}`
       : '';
     const btn = root.querySelector('#result');
-    btn.disabled = !tt.complet;
-    btn.textContent = tt.complet ? t('see_result', fmt(tt.net, 1)) : (f.shapes.length ? t('enter_missing') : t('draw_wall_first'));
+    if (drawingMulti()) {
+      btn.dataset.mode = 'finish';
+      btn.disabled = st.temp.length < 3;
+      btn.textContent = st.temp.length < 3 ? t('finish_need3') : t('finish_shape', st.temp.length);
+    } else {
+      btn.dataset.mode = 'result';
+      btn.disabled = !tt.complet;
+      btn.textContent = tt.complet ? t('see_result', fmt(tt.net, 1)) : (f.shapes.length ? t('enter_missing') : t('draw_wall_first'));
+    }
   }
 
   function showLoupe(e, p) {
@@ -304,8 +317,7 @@ export async function renderEditor(root, id, { go, toast }) {
     // Toucher l'intérieur d'une fenêtre/porte : largeur, puis hauteur.
     const o = insideOuverture(p);
     if (o) {
-      const ev = edgeValues(f, o);
-      st.drag = { kind: 'tap', edge: { shapeId: o.id, edge: ev[0].v == null ? 0 : ev[1].v == null ? 1 : 0 }, start };
+      st.drag = { kind: 'tap', edge: nextMissing(f, o.id) || { shapeId: o.id, edge: 0 }, start };
       return;
     }
     const edge = nearestEdge(p);
@@ -332,18 +344,18 @@ export async function renderEditor(root, id, { go, toast }) {
     loupe.hidden = true;
     if (!d) return;
     if (d.kind === 'new' && e.type === 'pointerup') {
-      st.temp.push(snap(toPhoto(e)));
-      const need = SHAPES[st.tool].points;
-      if (st.temp.length >= need) {
-        const type = st.tool;
-        f.shapes.push({ id: uid(), type, points: normalize(type, st.temp) });
+      const p = snap(toPhoto(e));
+      if (navigator.vibrate) navigator.vibrate(12);
+      // Retoucher le premier point ferme la forme.
+      if (st.tool !== 'pignon' && st.temp.length >= 3 && p.x === st.temp[0].x && p.y === st.temp[0].y) { finishShape(); return; }
+      st.temp.push(p);
+      if (st.tool === 'pignon' && st.temp.length >= 3) {
+        f.shapes.push({ id: uid(), type: 'pignon', points: normalize('pignon', st.temp) });
         st.temp = [];
         save();
-        if (type === 'mur') { st.tool = 'coter'; toast(t('wall_drawn')); }
-        else if (type === 'pignon') { st.tool = 'coter'; toast(t('pignon_drawn')); }
-        else toast(t('opening_added'));
+        st.tool = 'coter';
+        toast(t('pignon_drawn'));
       }
-      if (navigator.vibrate) navigator.vibrate(12);
     } else if (d.kind === 'move' && d.moved) {
       save();
     } else if (d.kind === 'tap' && e.type === 'pointerup') {
@@ -365,7 +377,7 @@ export async function renderEditor(root, id, { go, toast }) {
     const last = f.shapes[f.shapes.length - 1];
     if (!last) return;
     const hasCotes = f.cotes[last.id] && Object.keys(f.cotes[last.id]).length;
-    if (hasCotes && !confirm(t('confirm_remove_last', SHAPES[last.type].label))) return;
+    if (hasCotes && !confirm(t('confirm_remove_last', shapeLabel(last)))) return;
     f.shapes.pop();
     delete f.cotes[last.id];
     await save();
@@ -383,7 +395,40 @@ export async function renderEditor(root, id, { go, toast }) {
     go(`#/client/${f.clientId}`);
   };
 
-  root.querySelector('#result').onclick = () => go(`#/facade/${f.id}/resultat`);
+  root.querySelector('#result').onclick = e => {
+    if (e.currentTarget.dataset.mode === 'finish') finishShape();
+    else go(`#/facade/${f.id}/resultat`);
+  };
+  root.querySelector('#prog').addEventListener('click', e => {
+    if (!e.target.closest('#nextcote')) return;
+    const nx = nextMissing(f);
+    if (nx) openSheet(nx);
+  });
+
+  function drawingMulti() {
+    return (st.tool === 'mur' || st.tool === 'ouverture') && st.temp.length > 0;
+  }
+
+  // Ferme la forme en cours : 4 coins presque à angle droit = rectangle, sinon forme libre.
+  function finishShape() {
+    if (st.temp.length < 3) return;
+    const role = st.tool;
+    const pts = st.temp;
+    const shape = pts.length === 4 && isRectLike(pts)
+      ? { id: uid(), type: role, points: normalize(role, pts) }
+      : { id: uid(), type: 'poly', role, points: pts };
+    f.shapes.push(shape);
+    st.temp = [];
+    save();
+    if (role === 'mur') { st.tool = 'coter'; toast(t('wall_drawn')); redraw(); }
+    else {
+      toast(t('opening_added'));
+      redraw();
+      // Ouverture : la saisie des cotes s'ouvre tout de suite.
+      const nx = nextMissing(f, shape.id);
+      if (nx) openSheet(nx);
+    }
+  }
 
   // ---------- fiche de saisie d'une cote ----------
   function openSheet(sel) {
@@ -391,15 +436,16 @@ export async function renderEditor(root, id, { go, toast }) {
     if (!shape) return;
     st.sel = sel;
     redraw();
-    const edgeName = SHAPES[shape.type].edges[sel.edge];
+    const eName = edgeName(shape, sel.edge);
     const vals = edgeValues(f, shape);
     const cur = f.cotes[shape.id]?.[sel.edge] || null;
     const lie = vals[sel.edge].etat === 'lie' ? vals[sel.edge] : null;
     let preuve = cur?.preuve || null;
     const isPente = shape.type === 'pignon' && sel.edge < 2;
     const sym = f.symetrique?.[shape.id] !== false;
-    const index = f.shapes.filter(s => s.type === shape.type).indexOf(shape) + 1;
-    const nbType = f.shapes.filter(s => s.type === shape.type).length;
+    const same = f.shapes.filter(s => shapeLabel(s) === shapeLabel(shape));
+    const index = same.indexOf(shape) + 1;
+    const nbType = same.length;
 
     const wrap = root.querySelector('#sheet');
     wrap.hidden = false;
@@ -407,8 +453,8 @@ export async function renderEditor(root, id, { go, toast }) {
       <div class="sheet-bg" id="sbg"></div>
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="stitle">
         <div class="handle"></div>
-        <span class="mono tiny cyan tracking">${esc(SHAPES[shape.type].label.toUpperCase())}${nbType > 1 ? ' ' + index : ''}</span>
-        <h2 id="stitle" class="display xs">${shape.type === 'ouverture' ? esc(edgeName.charAt(0).toUpperCase() + edgeName.slice(1)) : esc(t('side', edgeName))}</h2>
+        <span class="mono tiny cyan tracking">${esc(shapeLabel(shape).toUpperCase())}${nbType > 1 ? ' ' + index : ''}</span>
+        <h2 id="stitle" class="display xs">${shape.type === 'ouverture' || shape.type === 'poly' ? esc(eName.charAt(0).toUpperCase() + eName.slice(1)) : esc(t('side', eName))}</h2>
         ${lie ? `<span class="muted small">${esc(t('deduced_now', fmt(lie.v), lie.source))}</span>` : ''}
         <div class="readout">
           <label for="val" class="mono tiny tracking">${esc(t('laser_measure'))}</label>
@@ -422,7 +468,7 @@ export async function renderEditor(root, id, { go, toast }) {
         <button class="btn primary big" id="ok">${esc(t('validate_cote'))}</button>
         <div class="row-btns">
           ${cur ? `<button class="btn glass" id="clear">${esc(t('clear_cote'))}</button>` : ''}
-          <button class="btn glass danger-text" id="rm">${esc(shape.type === 'ouverture' ? t('remove_opening') : t('remove_shape'))}</button>
+          <button class="btn glass danger-text" id="rm">${esc(isDeduction(shape) ? t('remove_opening') : t('remove_shape'))}</button>
         </div>
       </div>`;
 
@@ -458,10 +504,9 @@ export async function renderEditor(root, id, { go, toast }) {
       save();
       if (!preuve) toast(t('saved_no_proof'));
       close();
-      // Ouverture : enchaîne sur la hauteur si elle manque encore.
-      if (shape.type === 'ouverture' && (sel.edge === 0 || sel.edge === 2) && edgeValues(f, shape)[1].v == null) {
-        openSheet({ shapeId: shape.id, edge: 1 });
-      }
+      // Enchaîne sur la cote suivante de la même forme (ex. fenêtre : largeur puis hauteur).
+      const nx = nextMissing(f, shape.id);
+      if (nx) openSheet(nx);
     };
     input.onkeydown = e => { if (e.key === 'Enter') wrap.querySelector('#ok').click(); };
     const clear = wrap.querySelector('#clear');

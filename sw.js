@@ -1,5 +1,5 @@
 // Mode hors ligne : l'appli se charge même sans réseau sur le chantier.
-const CACHE = 'crm-terrain-v5';
+const CACHE = 'crm-terrain-v6';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest', './icon.svg',
   './js/app.js', './js/db.js', './js/geometry.js', './js/checks.js', './js/ign.js',
